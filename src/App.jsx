@@ -13,7 +13,6 @@ import {
   Download,
   Edit3,
   FileSpreadsheet,
-  FileText,
   FileOutput,
   Filter,
   Leaf,
@@ -39,6 +38,7 @@ import {
   Truck,
   User,
   Users,
+  X,
 } from 'lucide-react';
 
 const sources = ['Facebook', 'TikTok', 'Viber', 'Phone'];
@@ -319,6 +319,10 @@ function BotanicalScene() {
 function App() {
   const [activePage, setActivePage] = useState('pos');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [invoiceListOpen, setInvoiceListOpen] = useState(false);
+  const [stockModalOpen, setStockModalOpen] = useState(false);
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [plants, setPlants] = usePersistentState('plant-zone-plants', samplePlants);
   const [customers, setCustomers] = usePersistentState('plant-zone-customers', sampleCustomers);
   const [invoices, setInvoices] = usePersistentState('plant-zone-invoices', sampleInvoices);
@@ -462,7 +466,7 @@ function App() {
       <div className="mobile-backdrop" hidden={!sidebarOpen} onClick={() => setSidebarOpen(false)} />
 
       <main className="main-content">
-        <Header activePage={activePage} onMenu={() => setSidebarOpen(true)} />
+        <Header activePage={activePage} onMenu={() => setSidebarOpen(true)} onAddInvoice={() => setInvoiceModalOpen(true)} onShowInvoices={() => setInvoiceListOpen(true)} onAddPlant={() => setStockModalOpen(true)} onAddCustomer={() => setCustomerModalOpen(true)} />
         {activePage === 'pos' && (
           <PosPage
             plants={plants}
@@ -486,9 +490,17 @@ function App() {
             completeSaleDisabled={completeSaleDisabled}
           />
         )}
-        {activePage === 'invoices' && <InvoicesPage invoices={invoices} setInvoices={setInvoices} />}
-        {activePage === 'stock' && <StockPage plants={plants} setPlants={setPlants} />}
-        {activePage === 'customers' && <CustomersPage customers={customers} invoices={invoices} />}
+        {activePage === 'invoices' && <InvoicesPage invoices={invoices} setInvoices={setInvoices} isFormOpen={invoiceModalOpen} setIsFormOpen={setInvoiceModalOpen} isListOpen={invoiceListOpen} setIsListOpen={setInvoiceListOpen} nextInvoiceNo={nextInvoiceNo} />}
+        {activePage === 'stock' && <StockPage plants={plants} setPlants={setPlants} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} />}
+        {activePage === 'customers' && (
+          <CustomersPage
+            customers={customers}
+            setCustomers={setCustomers}
+            invoices={invoices}
+            isFormOpen={customerModalOpen}
+            setIsFormOpen={setCustomerModalOpen}
+          />
+        )}
         {activePage === 'daily' && <DailyDataPage rows={rows} />}
         {activePage === 'monthly' && <MonthlyDataPage rows={rows} invoices={invoices} />}
         {activePage === 'export' && <ExportCenterPage rows={rows} invoices={invoices} />}
@@ -502,8 +514,11 @@ function PhoneIcon() {
   return <span className="phone-dot" aria-hidden="true">09</span>;
 }
 
-function Header({ activePage, onMenu }) {
+function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, onAddCustomer }) {
   const page = navItems.find((item) => item.id === activePage);
+  const isInvoicesPage = activePage === 'invoices';
+  const isStockPage = activePage === 'stock';
+  const isCustomersPage = activePage === 'customers';
   return (
     <>
       <header className="topbar">
@@ -525,11 +540,14 @@ function Header({ activePage, onMenu }) {
             <p className="eyebrow">Plant Zone Garden Center</p>
             <h1>{activePage === 'pos' ? 'Plant Zone Garden Center POS' : page?.label || 'POS Sale'}</h1>
             <p className="hero-copy">A modern POS for plant sales, social media customers, delivery orders, reservations, landscaping service, invoices, and export-ready daily/monthly data.</p>
-            <div className="hero-actions">
-              <button className="primary-button"><Plus size={17} /> New Invoice</button>
-              <button className="soft-button"><FileSpreadsheet size={17} /> Export Today</button>
-              <button className="soft-button"><Truck size={17} /> Delivery Order</button>
-            </div>
+            {(isInvoicesPage || isStockPage || isCustomersPage) && (
+              <div className="hero-actions">
+                {isInvoicesPage && <button className="primary-button" onClick={onAddInvoice}><Plus size={17} /> Add Invoice</button>}
+                {isInvoicesPage && <button className="soft-button" onClick={onShowInvoices}><ReceiptText size={17} /> Show Invoices</button>}
+                {isStockPage && <button className="primary-button" onClick={onAddPlant}><Plus size={17} /> Add Plant</button>}
+                {isCustomersPage && <button className="primary-button" onClick={onAddCustomer}><Plus size={17} /> Add Customer</button>}
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -797,9 +815,20 @@ function Totals({ totals }) {
   );
 }
 
-function InvoicesPage({ invoices, setInvoices }) {
+function InvoicesPage({ invoices, setInvoices, isFormOpen, setIsFormOpen, isListOpen, setIsListOpen, nextInvoiceNo }) {
+  const emptyItem = { plant_name: '', plant_code: '', plant_type: 'Indoor', size: 'M', quantity: 1, unit_price: 0, ws_price: 0 };
+  const emptyDraft = {
+    invoice_no: nextInvoiceNo,
+    sale_date: today(),
+    payment_status: 'Paid',
+    payment_method: 'Cash',
+    customer: { cus_name: '', cus_ph: '', cus_address: '', source: 'Facebook' },
+    items: [emptyItem],
+  };
   const [filters, setFilters] = useState({ date: '', customer: '', status: '', source: '' });
   const [selectedId, setSelectedId] = useState(invoices[0]?.id ?? null);
+  const [draft, setDraft] = useState(emptyDraft);
+  const [editingId, setEditingId] = useState(null);
   const selected = invoices.find((invoice) => invoice.id === selectedId) || invoices[0];
   const filtered = invoices.filter((invoice) => (
     (!filters.date || invoice.sale_date === filters.date)
@@ -812,74 +841,253 @@ function InvoicesPage({ invoices, setInvoices }) {
     if (!selectedId && invoices[0]) setSelectedId(invoices[0].id);
   }, [invoices, selectedId]);
 
-  return (
-    <section className="page-grid invoice-page-grid">
-      <div className="panel reveal">
-        <div className="panel-title-row">
-          <div><h2>Invoices</h2><p>Filter by date, customer, status, and source.</p></div>
-          <button className="ghost-button" onClick={() => exportRows('plant-zone-invoices', flattenInvoiceRows(filtered), 'csv')}><Download size={17} /> CSV</button>
-        </div>
-        <div className="filter-grid">
-          <label>Date<input type="date" value={filters.date} onChange={(event) => setFilters({ ...filters, date: event.target.value })} /></label>
-          <label>Customer<input value={filters.customer} onChange={(event) => setFilters({ ...filters, customer: event.target.value })} placeholder="Customer name" /></label>
-          <label>Status<select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All</option>{paymentStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
-          <label>Source<select value={filters.source} onChange={(event) => setFilters({ ...filters, source: event.target.value })}><option value="">All</option>{sources.map((source) => <option key={source}>{source}</option>)}</select></label>
-        </div>
-        <div className="list-stack">
-          {filtered.map((invoice) => (
-            <button key={invoice.id} className={`invoice-row ${selected?.id === invoice.id ? 'active' : ''}`} onClick={() => setSelectedId(invoice.id)}>
-              <span><strong>{invoice.invoice_no}</strong><small>{invoice.customer.cus_name} - {invoice.customer.source}</small></span>
-              <span><strong>{money(invoice.sale_amount)}</strong><small>{invoice.payment_status}</small></span>
-            </button>
-          ))}
-        </div>
+  useEffect(() => {
+    if (!editingId) setDraft((current) => ({ ...current, invoice_no: nextInvoiceNo }));
+  }, [editingId, nextInvoiceNo]);
+
+  const invoiceTotals = useMemo(() => draft.items.reduce((totals, item) => {
+    const quantity = Number(item.quantity) || 0;
+    const unit = Number(item.unit_price) || 0;
+    const ws = Number(item.ws_price) || 0;
+    totals.subtotal += quantity * unit;
+    totals.wholesale += quantity * ws;
+    totals.profit += quantity * (unit - ws);
+    return totals;
+  }, { subtotal: 0, wholesale: 0, profit: 0 }), [draft.items]);
+
+  const closeForm = () => {
+    setDraft({ ...emptyDraft, invoice_no: nextInvoiceNo });
+    setEditingId(null);
+    setIsFormOpen(false);
+  };
+
+  const editInvoice = (invoice) => {
+    if (!invoice) return;
+    setDraft({
+      invoice_no: invoice.invoice_no,
+      sale_date: invoice.sale_date,
+      payment_status: invoice.payment_status,
+      payment_method: invoice.payment_method,
+      customer: { ...invoice.customer },
+      items: invoice.items.map((item) => ({
+        plant_name: item.plant_name,
+        plant_code: item.plant_code,
+        plant_type: item.plant_type,
+        size: item.size,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        ws_price: item.ws_price,
+      })),
+    });
+    setEditingId(invoice.id);
+    setIsFormOpen(true);
+  };
+
+  const updateDraftItem = (index, updates) => {
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...updates } : item)),
+    }));
+  };
+
+  const saveInvoice = () => {
+    if (!draft.customer.cus_name.trim() || !draft.items.some((item) => item.plant_name.trim())) return;
+    const items = draft.items
+      .filter((item) => item.plant_name.trim())
+      .map((item) => {
+        const quantity = Number(item.quantity) || 0;
+        const unit = Number(item.unit_price) || 0;
+        const ws = Number(item.ws_price) || 0;
+        return {
+          plant_id: item.plant_id || Date.now(),
+          plant_name: item.plant_name,
+          plant_code: item.plant_code,
+          plant_type: item.plant_type,
+          size: item.size,
+          quantity,
+          unit_price: unit,
+          ws_price: ws,
+          sale_amount: quantity * unit,
+          profit_amount: quantity * (unit - ws),
+        };
+      });
+    const invoice = {
+      id: editingId || Date.now(),
+      invoice_no: draft.invoice_no || nextInvoiceNo,
+      customer: { id: editingId || Date.now(), ...draft.customer, created_at: today(), updated_at: today() },
+      sale_date: draft.sale_date || today(),
+      payment_status: draft.payment_status,
+      payment_method: draft.payment_method,
+      subtotal: invoiceTotals.subtotal,
+      wholesale_total: invoiceTotals.wholesale,
+      profit_total: invoiceTotals.profit,
+      sale_amount: invoiceTotals.subtotal,
+      items,
+      created_at: new Date().toISOString(),
+    };
+    if (editingId) {
+      setInvoices((current) => current.map((item) => (item.id === editingId ? invoice : item)));
+    } else {
+      setInvoices((current) => [invoice, ...current]);
+      setSelectedId(invoice.id);
+    }
+    closeForm();
+  };
+
+  const invoiceListPanel = (
+    <div className="invoice-list-panel">
+      <div className="panel-title-row">
+        <div><h2>Invoices</h2><p>Filter by date, customer, status, and source.</p></div>
+        <button className="ghost-button" onClick={() => exportRows('plant-zone-invoices', flattenInvoiceRows(filtered), 'csv')}><Download size={17} /> CSV</button>
       </div>
-      <InvoiceDetail invoice={selected} onDelete={(id) => setInvoices((current) => current.filter((invoice) => invoice.id !== id))} />
-    </section>
+      <div className="filter-grid invoice-list-filters">
+        <label>Date<input type="date" value={filters.date} onChange={(event) => setFilters({ ...filters, date: event.target.value })} /></label>
+        <label>Customer<input value={filters.customer} onChange={(event) => setFilters({ ...filters, customer: event.target.value })} placeholder="Customer name" /></label>
+        <label>Status<select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All</option>{paymentStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+        <label>Source<select value={filters.source} onChange={(event) => setFilters({ ...filters, source: event.target.value })}><option value="">All</option>{sources.map((source) => <option key={source}>{source}</option>)}</select></label>
+      </div>
+      <div className="list-stack">
+        {filtered.map((invoice) => (
+          <button key={invoice.id} className={`invoice-row ${selected?.id === invoice.id ? 'active' : ''}`} onClick={() => { setSelectedId(invoice.id); setIsListOpen(false); }}>
+            <span><strong>{invoice.invoice_no}</strong><small>{invoice.customer.cus_name} - {invoice.customer.source}</small></span>
+            <span><strong>{money(invoice.sale_amount)}</strong><small>{invoice.payment_status}</small></span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <section className="page-grid invoice-page-grid invoice-detail-grid">
+        <InvoiceDetail invoice={selected} onEdit={editInvoice} onDelete={(id) => setInvoices((current) => current.filter((invoice) => invoice.id !== id))} />
+      </section>
+      {isListOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsListOpen(false)}>
+          <div className="stock-modal invoice-list-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-list-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-title-row">
+              <div>
+                <h2 id="invoice-list-title">Invoice List</h2>
+                <p>Choose an invoice or export the filtered rows.</p>
+              </div>
+              <button className="icon-button" onClick={() => setIsListOpen(false)} aria-label="Close invoice list"><X size={17} /></button>
+            </div>
+            {invoiceListPanel}
+          </div>
+        </div>
+      )}
+      {isFormOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={closeForm}>
+          <div className="stock-modal invoice-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-title-row">
+              <div>
+                <h2 id="invoice-modal-title">{editingId ? 'Edit Invoice' : 'Add Invoice'}</h2>
+                <p>{editingId ? 'Update invoice customer, payment, and item rows.' : 'Create a manual invoice record.'}</p>
+              </div>
+              <button className="icon-button" onClick={closeForm} aria-label="Close invoice form"><X size={17} /></button>
+            </div>
+            <div className="form-grid invoice-form">
+              <label>Invoice no<input value={draft.invoice_no} onChange={(event) => setDraft({ ...draft, invoice_no: event.target.value })} /></label>
+              <label>Sale date<input type="date" value={draft.sale_date} onChange={(event) => setDraft({ ...draft, sale_date: event.target.value })} /></label>
+              <label>Customer name<input value={draft.customer.cus_name} onChange={(event) => setDraft({ ...draft, customer: { ...draft.customer, cus_name: event.target.value } })} /></label>
+              <label>Phone<input value={draft.customer.cus_ph} onChange={(event) => setDraft({ ...draft, customer: { ...draft.customer, cus_ph: event.target.value } })} /></label>
+              <label>Address<input value={draft.customer.cus_address} onChange={(event) => setDraft({ ...draft, customer: { ...draft.customer, cus_address: event.target.value } })} /></label>
+              <label>Source<select value={draft.customer.source} onChange={(event) => setDraft({ ...draft, customer: { ...draft.customer, source: event.target.value } })}>{sources.map((source) => <option key={source}>{source}</option>)}</select></label>
+              <label>Status<select value={draft.payment_status} onChange={(event) => setDraft({ ...draft, payment_status: event.target.value })}>{paymentStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+              <label>Payment method<input value={draft.payment_method} onChange={(event) => setDraft({ ...draft, payment_method: event.target.value })} /></label>
+            </div>
+            <div className="invoice-item-editor">
+              {draft.items.map((item, index) => (
+                <div className="invoice-edit-row" key={`draft-item-${index}`}>
+                  <label>Plant<input value={item.plant_name} onChange={(event) => updateDraftItem(index, { plant_name: event.target.value })} /></label>
+                  <label>Code<input value={item.plant_code} onChange={(event) => updateDraftItem(index, { plant_code: event.target.value })} /></label>
+                  <label>Qty<input type="number" value={item.quantity} onChange={(event) => updateDraftItem(index, { quantity: Number(event.target.value) })} /></label>
+                  <label>Unit<input type="number" value={item.unit_price} onChange={(event) => updateDraftItem(index, { unit_price: Number(event.target.value) })} /></label>
+                  <label>WS<input type="number" value={item.ws_price} onChange={(event) => updateDraftItem(index, { ws_price: Number(event.target.value) })} /></label>
+                  <button className="icon-button danger" onClick={() => setDraft((current) => ({ ...current, items: current.items.filter((_, itemIndex) => itemIndex !== index) }))} aria-label="Remove invoice item"><Trash2 size={16} /></button>
+                </div>
+              ))}
+              <button className="ghost-button" onClick={() => setDraft((current) => ({ ...current, items: [...current.items, emptyItem] }))}><Plus size={17} /> Add item</button>
+            </div>
+            <Totals totals={invoiceTotals} />
+            <button className="primary-button wide" onClick={saveInvoice}><Plus size={17} /> {editingId ? 'Update invoice' : 'Add invoice'}</button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
-function InvoiceDetail({ invoice, onDelete }) {
+function InvoiceDetail({ invoice, onEdit, onDelete }) {
   if (!invoice) return <div className="panel empty-state">No invoices yet.</div>;
   return (
     <aside className="panel reveal invoice-detail printable">
-      <div className="panel-title-row">
-        <div><h2>{invoice.invoice_no}</h2><p>{invoice.sale_date} - {invoice.payment_method}</p></div>
-        <div className="icon-actions">
-          <button className="icon-button" onClick={() => window.print()} aria-label="Print invoice"><Printer size={18} /></button>
-          <button className="icon-button" onClick={() => printPdf()} aria-label="Export invoice PDF"><FileText size={18} /></button>
-          <button className="icon-button" onClick={() => shareText(`${invoice.invoice_no} - ${invoice.customer.cus_name} - ${money(invoice.sale_amount)}`)} aria-label="Share invoice"><Send size={18} /></button>
-          <button className="icon-button danger" onClick={() => onDelete(invoice.id)} aria-label="Delete invoice"><Trash2 size={18} /></button>
+      <div className="invoice-action-bar">
+        <div>
+          <h2>{invoice.invoice_no}</h2>
+          <p>{invoice.sale_date} - {invoice.payment_method}</p>
+        </div>
+        <div className="invoice-actions">
+          <button className="ghost-button" onClick={() => onEdit(invoice)}><Edit3 size={17} /> Edit</button>
+          <button className="ghost-button" onClick={() => window.print()}><Printer size={17} /> Print</button>
+          <button className="ghost-button" onClick={() => shareText(`${invoice.invoice_no} - ${invoice.customer.cus_name} - ${money(invoice.sale_amount)}`)}><Send size={17} /> Share</button>
+          <button className="ghost-button danger" onClick={() => onDelete(invoice.id)}><Trash2 size={17} /> Delete</button>
         </div>
       </div>
-      <div className="customer-summary">
-        <strong>{invoice.customer.cus_name}</strong>
-        <span>{invoice.customer.cus_ph}</span>
-        <span>{invoice.customer.cus_address}</span>
-        <small>{invoice.customer.source} - {invoice.payment_status}</small>
+      <div className="shop-invoice">
+        <div className="shop-invoice-head">
+          <div>
+            <span className="invoice-brand-mark"><Leaf size={20} /></span>
+            <h2>Plant Zone Garden Center</h2>
+            <p>Pyay, Bago Region</p>
+            <p>+95 9 756 040646</p>
+          </div>
+          <div className="invoice-stamp">
+            <span>Invoice</span>
+            <strong>{invoice.invoice_no}</strong>
+            <small>{invoice.sale_date}</small>
+          </div>
+        </div>
+        <div className="invoice-info-grid">
+          <section>
+            <span>Bill to</span>
+            <strong>{invoice.customer.cus_name}</strong>
+            <p>{invoice.customer.cus_ph}</p>
+            <p>{invoice.customer.cus_address}</p>
+          </section>
+          <section>
+            <span>Payment</span>
+            <strong>{invoice.payment_status}</strong>
+            <p>{invoice.payment_method}</p>
+            <p>{invoice.customer.source}</p>
+          </section>
+        </div>
+        <div className="invoice-table-wrap">
+          <table className="shop-invoice-table">
+            <thead><tr><th>Item</th><th>Code</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
+            <tbody>
+              {invoice.items.map((item) => (
+                <tr key={`${invoice.id}-${item.plant_code}`}>
+                  <td><strong>{item.plant_name}</strong><small>{item.plant_type} / Size {item.size}</small></td>
+                  <td>{item.plant_code}</td>
+                  <td>{item.quantity}</td>
+                  <td>{money(item.unit_price)}</td>
+                  <td>{money(item.sale_amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="invoice-bottom">
+          <p>Thank you for shopping with Plant Zone.</p>
+          <Totals totals={{ subtotal: invoice.subtotal, wholesale: invoice.wholesale_total, profit: invoice.profit_total }} />
+        </div>
       </div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>Plant</th><th>Code</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
-          <tbody>
-            {invoice.items.map((item) => (
-              <tr key={`${invoice.id}-${item.plant_code}`}>
-                <td>{item.plant_name}</td>
-                <td>{item.plant_code}</td>
-                <td>{item.quantity}</td>
-                <td>{money(item.unit_price)}</td>
-                <td>{money(item.sale_amount)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <Totals totals={{ subtotal: invoice.subtotal, wholesale: invoice.wholesale_total, profit: invoice.profit_total }} />
     </aside>
   );
 }
 
-function StockPage({ plants, setPlants }) {
+function StockPage({ plants, setPlants, isFormOpen, setIsFormOpen }) {
   const emptyPlant = { plant_name: '', plant_code: '', plant_type: 'Indoor', size: 'M', quantity: 0, unit_price: 0, ws_price: 0, low_stock_limit: 5, image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=800&q=80' };
   const [draft, setDraft] = useState(emptyPlant);
   const [editingId, setEditingId] = useState(null);
@@ -898,94 +1106,211 @@ function StockPage({ plants, setPlants }) {
     setHistory((current) => [{ id: Date.now(), date: today(), plant_name: draft.plant_name, type: editingId ? 'Edit' : 'Stock in', quantity: Number(draft.quantity) }, ...current]);
     setDraft(emptyPlant);
     setEditingId(null);
+    setIsFormOpen(false);
+  };
+
+  const closeForm = () => {
+    setDraft(emptyPlant);
+    setEditingId(null);
+    setIsFormOpen(false);
+  };
+
+  const editPlant = (plant) => {
+    setDraft(plant);
+    setEditingId(plant.id);
+    setIsFormOpen(true);
+  };
+
+  const uploadPlantImage = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setDraft((current) => ({ ...current, image: reader.result }));
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
-    <section className="page-grid stock-grid">
-      <div className="panel reveal">
-        <div className="panel-title-row">
-          <div><h2>Plant Stock</h2><p>Add, edit, delete, and watch low-stock plants.</p></div>
-          <Settings size={20} />
-        </div>
-        <div className="form-grid stock-form">
-          <label>Plant name<input value={draft.plant_name} onChange={(event) => setDraft({ ...draft, plant_name: event.target.value })} /></label>
-          <label>Plant code<input value={draft.plant_code} onChange={(event) => setDraft({ ...draft, plant_code: event.target.value })} /></label>
-          <label>Type<select value={draft.plant_type} onChange={(event) => setDraft({ ...draft, plant_type: event.target.value })}>{plantTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
-          <label>Size<input value={draft.size} onChange={(event) => setDraft({ ...draft, size: event.target.value })} /></label>
-          <label>Quantity<input type="number" value={draft.quantity} onChange={(event) => setDraft({ ...draft, quantity: Number(event.target.value) })} /></label>
-          <label>Unit price<input type="number" value={draft.unit_price} onChange={(event) => setDraft({ ...draft, unit_price: Number(event.target.value) })} /></label>
-          <label>WS price<input type="number" value={draft.ws_price} onChange={(event) => setDraft({ ...draft, ws_price: Number(event.target.value) })} /></label>
-          <label>Low stock limit<input type="number" value={draft.low_stock_limit} onChange={(event) => setDraft({ ...draft, low_stock_limit: Number(event.target.value) })} /></label>
-          <button className="primary-button span-2" onClick={savePlant}><Plus size={17} /> {editingId ? 'Update plant' : 'Add plant'}</button>
+    <>
+      <section className="page-grid stock-grid">
+        <div className="panel reveal stock-panel">
+          <div className="panel-title-row">
+            <div><h2>Plant Stock</h2><p>Full stock list with quick edits and low-stock status.</p></div>
+          </div>
+        <div className="stock-card-grid">
+          {plants.map((plant) => (
+            <article key={plant.id} className={`stock-card ${plant.quantity <= plant.low_stock_limit ? 'low-stock-card' : ''}`}>
+              <img src={plant.image || emptyPlant.image} alt={plant.plant_name} onError={(event) => { event.currentTarget.src = emptyPlant.image; }} />
+              <div className="stock-card-main">
+                <div>
+                  <strong>{plant.plant_name}</strong>
+                  <span>{plant.plant_code}</span>
+                </div>
+                <dl className="stock-card-metrics">
+                  <div><dt>Qty</dt><dd>{plant.quantity}</dd></div>
+                  <div><dt>Sell Price</dt><dd>{money(plant.unit_price)}</dd></div>
+                  <div><dt>WS Price</dt><dd>{money(plant.ws_price)}</dd></div>
+                </dl>
+              </div>
+              <div className="stock-card-side">
+                <span>{plant.quantity <= plant.low_stock_limit ? 'Low stock' : 'In stock'}</span>
+                <strong>{money(plant.unit_price)}</strong>
+                <div className="stock-card-actions">
+                  <button className="ghost-button" onClick={() => editPlant(plant)}><Edit3 size={16} /> Edit</button>
+                  <button className="ghost-button danger" onClick={() => setPlants((current) => current.filter((item) => item.id !== plant.id))}><Trash2 size={16} /> Delete</button>
+                </div>
+              </div>
+              <div className="stock-card-footer">
+                <span><CalendarDays size={14} /> {plant.updated_at || plant.created_at || today()}</span>
+                <span><Package size={14} /> {plant.plant_type} / Size {plant.size}</span>
+              </div>
+            </article>
+          ))}
         </div>
       </div>
-      <div className="panel reveal">
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Name</th><th>Code</th><th>Type</th><th>Size</th><th>Qty</th><th>Unit</th><th>WS</th><th>Actions</th></tr></thead>
-            <tbody>
-              {plants.map((plant) => (
-                <tr key={plant.id} className={plant.quantity <= plant.low_stock_limit ? 'low-stock' : ''}>
-                  <td>{plant.plant_name}</td>
-                  <td>{plant.plant_code}</td>
-                  <td>{plant.plant_type}</td>
-                  <td>{plant.size}</td>
-                  <td>{plant.quantity}</td>
-                  <td>{money(plant.unit_price)}</td>
-                  <td>{money(plant.ws_price)}</td>
-                  <td>
-                    <div className="icon-actions">
-                      <button className="icon-button" onClick={() => { setDraft(plant); setEditingId(plant.id); }} aria-label={`Edit ${plant.plant_name}`}><Edit3 size={16} /></button>
-                      <button className="icon-button danger" onClick={() => setPlants((current) => current.filter((item) => item.id !== plant.id))} aria-label={`Delete ${plant.plant_name}`}><Trash2 size={16} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <footer className="panel reveal stock-footer">
         <h3>Stock in/out history</h3>
         <div className="mini-history">
           {history.map((entry) => (
             <span key={entry.id}>{entry.date} - {entry.type} - {entry.plant_name} - {entry.quantity}</span>
           ))}
         </div>
-      </div>
-    </section>
+      </footer>
+      </section>
+      {isFormOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={closeForm}>
+          <div className="stock-modal" role="dialog" aria-modal="true" aria-labelledby="stock-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-title-row">
+              <div>
+                <h2 id="stock-modal-title">{editingId ? 'Edit Plant' : 'Add Plant'}</h2>
+                <p>{editingId ? 'Update the selected stock item.' : 'Create a new stocked plant item.'}</p>
+              </div>
+              <button className="icon-button" onClick={closeForm} aria-label="Close add plant form"><X size={17} /></button>
+            </div>
+            <div className="form-grid stock-form">
+              <label>Plant name<input value={draft.plant_name} onChange={(event) => setDraft({ ...draft, plant_name: event.target.value })} /></label>
+              <label>Plant code<input value={draft.plant_code} onChange={(event) => setDraft({ ...draft, plant_code: event.target.value })} /></label>
+              <label>Type<select value={draft.plant_type} onChange={(event) => setDraft({ ...draft, plant_type: event.target.value })}>{plantTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
+              <label>Size<input value={draft.size} onChange={(event) => setDraft({ ...draft, size: event.target.value })} /></label>
+              <label>Quantity<input type="number" value={draft.quantity} onChange={(event) => setDraft({ ...draft, quantity: Number(event.target.value) })} /></label>
+              <label>Unit price<input type="number" value={draft.unit_price} onChange={(event) => setDraft({ ...draft, unit_price: Number(event.target.value) })} /></label>
+              <label>WS price<input type="number" value={draft.ws_price} onChange={(event) => setDraft({ ...draft, ws_price: Number(event.target.value) })} /></label>
+              <label>Low stock limit<input type="number" value={draft.low_stock_limit} onChange={(event) => setDraft({ ...draft, low_stock_limit: Number(event.target.value) })} /></label>
+              <label className="span-2 image-upload-field">
+                Plant image
+                <span className="image-upload-control">
+                  <img src={draft.image || emptyPlant.image} alt="Plant preview" onError={(event) => { event.currentTarget.src = emptyPlant.image; }} />
+                  <span>Upload image</span>
+                  <input type="file" accept="image/*" onChange={uploadPlantImage} />
+                </span>
+              </label>
+              <button className="primary-button span-2" onClick={savePlant}><Plus size={17} /> {editingId ? 'Update plant' : 'Add plant'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
-function CustomersPage({ customers, invoices }) {
+function CustomersPage({ customers, setCustomers, invoices, isFormOpen, setIsFormOpen }) {
+  const emptyCustomer = { cus_name: '', cus_ph: '', cus_address: '', source: 'Facebook' };
   const [source, setSource] = useState('');
+  const [draft, setDraft] = useState(emptyCustomer);
+  const [editingId, setEditingId] = useState(null);
   const filtered = source ? customers.filter((customer) => customer.source === source) : customers;
 
+  const saveCustomer = () => {
+    if (!draft.cus_name.trim() || !draft.cus_ph.trim()) return;
+    if (editingId) {
+      setCustomers((current) => current.map((customer) => (
+        customer.id === editingId ? { ...customer, ...draft, id: editingId, updated_at: today() } : customer
+      )));
+    } else {
+      setCustomers((current) => [{ ...draft, id: Date.now(), created_at: today(), updated_at: today() }, ...current]);
+    }
+    setDraft(emptyCustomer);
+    setEditingId(null);
+    setIsFormOpen(false);
+  };
+
+  const closeForm = () => {
+    setDraft(emptyCustomer);
+    setEditingId(null);
+    setIsFormOpen(false);
+  };
+
+  const editCustomer = (customer) => {
+    setDraft({
+      cus_name: customer.cus_name || '',
+      cus_ph: customer.cus_ph || '',
+      cus_address: customer.cus_address || '',
+      source: customer.source || 'Facebook',
+    });
+    setEditingId(customer.id);
+    setIsFormOpen(true);
+  };
+
   return (
-    <section className="panel reveal">
-      <div className="panel-title-row">
-        <div><h2>Customers</h2><p>Saved automatically from completed sales.</p></div>
-        <label className="compact-select">Source <select value={source} onChange={(event) => setSource(event.target.value)}><option value="">All</option>{sources.map((item) => <option key={item}>{item}</option>)}</select></label>
-      </div>
-      <div className="customer-grid">
-        {filtered.map((customer) => {
-          const related = invoices.filter((invoice) => invoice.customer.cus_ph === customer.cus_ph || invoice.customer.cus_name === customer.cus_name);
-          const total = related.reduce((sum, invoice) => sum + invoice.sale_amount, 0);
-          const lastDate = related.map((invoice) => invoice.sale_date).sort().at(-1) || customer.updated_at;
-          return (
-            <article className="customer-card" key={customer.id}>
-              <div className="avatar">{customer.cus_name.slice(0, 1).toUpperCase()}</div>
-              <strong>{customer.cus_name}</strong>
-              <span>{customer.cus_ph}</span>
-              <small>{customer.cus_address}</small>
-              <div className="customer-metrics">
-                <div><span>Total purchases</span><strong>{money(total)}</strong></div>
-                <div><span>Last purchase</span><strong>{lastDate}</strong></div>
+    <>
+      <section className="panel reveal">
+        <div className="panel-title-row">
+          <div><h2>Customers</h2><p>Manage saved customers and sales history.</p></div>
+          <label className="compact-select">Source <select value={source} onChange={(event) => setSource(event.target.value)}><option value="">All</option>{sources.map((item) => <option key={item}>{item}</option>)}</select></label>
+        </div>
+        <div className="customer-grid">
+          {filtered.map((customer) => {
+            const related = invoices.filter((invoice) => invoice.customer.cus_ph === customer.cus_ph || invoice.customer.cus_name === customer.cus_name);
+            const total = related.reduce((sum, invoice) => sum + invoice.sale_amount, 0);
+            const lastDate = related.map((invoice) => invoice.sale_date).sort().at(-1) || customer.updated_at;
+            return (
+              <article className="customer-card" key={customer.id}>
+                <div className="avatar">{customer.cus_name.slice(0, 1).toUpperCase()}</div>
+                <div className="customer-card-main">
+                  <strong>{customer.cus_name}</strong>
+                  <span>{customer.cus_ph}</span>
+                  <small>{customer.cus_address || 'No address saved'}</small>
+                </div>
+                <div className="customer-metrics">
+                  <div><span>Total purchases</span><strong>{money(total)}</strong></div>
+                  <div><span>Last purchase</span><strong>{lastDate || '-'}</strong></div>
+                </div>
+                <div className="customer-card-actions">
+                  <button className="ghost-button" onClick={() => editCustomer(customer)}><Edit3 size={16} /> Edit</button>
+                  <button className="ghost-button danger" onClick={() => setCustomers((current) => current.filter((item) => item.id !== customer.id))}><Trash2 size={16} /> Delete</button>
+                </div>
+                <div className="customer-card-footer">
+                  <span><CalendarDays size={14} /> {customer.updated_at || customer.created_at || today()}</span>
+                  <span><User size={14} /> {customer.source}</span>
+                </div>
+                <span className="source-pill">{customer.source}</span>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+      {isFormOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={closeForm}>
+          <div className="stock-modal" role="dialog" aria-modal="true" aria-labelledby="customer-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-title-row">
+              <div>
+                <h2 id="customer-modal-title">{editingId ? 'Edit Customer' : 'Add Customer'}</h2>
+                <p>{editingId ? 'Update customer contact details.' : 'Create a saved customer profile.'}</p>
               </div>
-              <span className="source-pill">{customer.source}</span>
-            </article>
-          );
-        })}
-      </div>
-    </section>
+              <button className="icon-button" onClick={closeForm} aria-label="Close add customer form"><X size={17} /></button>
+            </div>
+            <div className="form-grid customer-form">
+              <label>Customer name<input value={draft.cus_name} onChange={(event) => setDraft({ ...draft, cus_name: event.target.value })} /></label>
+              <label>Phone<input value={draft.cus_ph} onChange={(event) => setDraft({ ...draft, cus_ph: event.target.value })} /></label>
+              <label className="span-2">Address<input value={draft.cus_address} onChange={(event) => setDraft({ ...draft, cus_address: event.target.value })} /></label>
+              <label>Source<select value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value })}>{sources.map((item) => <option key={item}>{item}</option>)}</select></label>
+              <button className="primary-button" onClick={saveCustomer}><Plus size={17} /> {editingId ? 'Update customer' : 'Add customer'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1246,10 +1571,6 @@ function shareText(text) {
     navigator.clipboard?.writeText(text);
     alert('Invoice record copied for sharing.');
   }
-}
-
-function printPdf() {
-  window.print();
 }
 
 function upsertCustomer(customers, customer) {
