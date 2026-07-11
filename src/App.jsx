@@ -5,44 +5,34 @@ import {
   BadgeDollarSign,
   Banknote,
   Bell,
-  Blocks,
   CalendarDays,
-  CheckCircle2,
-  Clock,
-  Database,
   Download,
   Edit3,
   FileSpreadsheet,
   FileOutput,
-  Filter,
   Leaf,
-  MapPin,
   Menu,
   Megaphone,
-  Minus,
   Package,
   Plus,
   Printer,
   RadioTower,
   ReceiptText,
+  RotateCcw,
   Search,
   Send,
   Settings,
-  ShoppingCart,
-  ScanBarcode,
   Sprout,
   Store,
   Trash2,
   TrendingUp,
   TriangleAlert,
-  Truck,
   User,
   Users,
   X,
 } from 'lucide-react';
 
 const sources = ['Facebook', 'TikTok', 'Viber', 'Phone'];
-const categories = ['All', 'Indoor', 'Outdoor', 'Succulent', 'Cactus', 'Flowers', 'Decorative', 'Garden Center', 'Landscaping'];
 const paymentStatuses = ['Paid', 'Pending', 'Partial'];
 const plantTypes = ['Indoor', 'Outdoor', 'Succulent', 'Cactus', 'Flowers', 'Decorative', 'Garden Center', 'Landscaping'];
 
@@ -184,7 +174,7 @@ const sampleInvoices = [
 ];
 
 const navItems = [
-  { id: 'pos', label: 'POS Sale', icon: ScanBarcode, group: 'Selling' },
+  { id: 'pos', label: 'Dashboard', icon: BarChart3, group: 'Selling' },
   { id: 'invoices', label: 'Invoices', icon: ReceiptText, group: 'Selling' },
   { id: 'stock', label: 'Plant Stock', icon: Leaf, group: 'Selling' },
   { id: 'customers', label: 'Customers', icon: Users, group: 'Selling' },
@@ -326,11 +316,6 @@ function App() {
   const [plants, setPlants] = usePersistentState('plant-zone-plants', samplePlants);
   const [customers, setCustomers] = usePersistentState('plant-zone-customers', sampleCustomers);
   const [invoices, setInvoices] = usePersistentState('plant-zone-invoices', sampleInvoices);
-  const [cart, setCart] = useState([]);
-  const [query, setQuery] = useState('');
-  const [category, setCategory] = useState('All');
-  const [customerDraft, setCustomerDraft] = useState({ cus_name: '', cus_address: '', cus_ph: '', source: 'Facebook' });
-  const [paymentDraft, setPaymentDraft] = useState({ payment_status: 'Paid', payment_method: 'Cash' });
 
   const rows = useMemo(() => flattenInvoiceRows(invoices), [invoices]);
 
@@ -340,82 +325,6 @@ function App() {
     return `PZ-${dateKey}-${String(todaysCount).padStart(3, '0')}`;
   }, [invoices]);
 
-  const cartTotals = useMemo(() => cart.reduce(
-    (acc, item) => {
-      acc.subtotal += item.unit_price * item.cartQty;
-      acc.wholesale += item.ws_price * item.cartQty;
-      acc.profit += (item.unit_price - item.ws_price) * item.cartQty;
-      return acc;
-    },
-    { subtotal: 0, wholesale: 0, profit: 0 },
-  ), [cart]);
-
-  const addToCart = (plant) => {
-    if (plant.quantity <= 0) return;
-    setCart((current) => {
-      const existing = current.find((item) => item.id === plant.id);
-      if (existing) {
-        return current.map((item) => (
-          item.id === plant.id ? { ...item, cartQty: Math.min(item.cartQty + 1, plant.quantity) } : item
-        ));
-      }
-      return [...current, { ...plant, cartQty: 1 }];
-    });
-  };
-
-  const updateCartQty = (plantId, delta) => {
-    setCart((current) => current
-      .map((item) => (item.id === plantId ? { ...item, cartQty: Math.max(0, Math.min(item.cartQty + delta, item.quantity)) } : item))
-      .filter((item) => item.cartQty > 0));
-  };
-
-  const completeSale = () => {
-    if (!cart.length || !customerDraft.cus_name.trim()) return;
-    const customerId = Date.now();
-    const customer = {
-      id: customerId,
-      ...customerDraft,
-      created_at: today(),
-      updated_at: today(),
-    };
-    const items = cart.map((item) => ({
-      plant_id: item.id,
-      plant_name: item.plant_name,
-      plant_code: item.plant_code,
-      plant_type: item.plant_type,
-      size: item.size,
-      quantity: item.cartQty,
-      unit_price: item.unit_price,
-      ws_price: item.ws_price,
-      sale_amount: item.unit_price * item.cartQty,
-      profit_amount: (item.unit_price - item.ws_price) * item.cartQty,
-    }));
-    const invoice = {
-      id: Date.now(),
-      invoice_no: nextInvoiceNo,
-      customer,
-      sale_date: today(),
-      payment_status: paymentDraft.payment_status,
-      payment_method: paymentDraft.payment_method,
-      subtotal: cartTotals.subtotal,
-      wholesale_total: cartTotals.wholesale,
-      profit_total: cartTotals.profit,
-      sale_amount: cartTotals.subtotal,
-      items,
-      created_at: new Date().toISOString(),
-    };
-
-    setInvoices((current) => [invoice, ...current]);
-    setCustomers((current) => upsertCustomer(current, customer));
-    setPlants((current) => current.map((plant) => {
-      const sold = cart.find((item) => item.id === plant.id);
-      return sold ? { ...plant, quantity: Math.max(0, plant.quantity - sold.cartQty), updated_at: today() } : plant;
-    }));
-    setCart([]);
-    setCustomerDraft({ cus_name: '', cus_address: '', cus_ph: '', source: customerDraft.source });
-  };
-
-  const completeSaleDisabled = !cart.length || !customerDraft.cus_name.trim();
   const todayRows = useMemo(() => rows.filter((row) => row.date === today()), [rows]);
   const monthlyRows = useMemo(() => rows.filter((row) => row.date.startsWith(monthNow())), [rows]);
 
@@ -427,15 +336,6 @@ function App() {
           <div>
             <strong>Plant Zone POS</strong>
             <small>Garden Center | Pyay</small>
-          </div>
-        </div>
-        <div className="profile-mini">
-          <div className="profile-cover" />
-          <div className="profile-body">
-            <p>Indoor plants, outdoor plants, cactus, flowers, delivery, reservations, and landscaping service.</p>
-            <span><PhoneIcon /> +95 9 756 040646</span>
-            <span><MapPin size={15} /> Pyay, Bago Region</span>
-            <span><Clock size={15} /> Always open</span>
           </div>
         </div>
         <nav className="nav-list" aria-label="Main navigation">
@@ -468,29 +368,14 @@ function App() {
       <main className="main-content">
         <Header activePage={activePage} onMenu={() => setSidebarOpen(true)} onAddInvoice={() => setInvoiceModalOpen(true)} onShowInvoices={() => setInvoiceListOpen(true)} onAddPlant={() => setStockModalOpen(true)} onAddCustomer={() => setCustomerModalOpen(true)} />
         {activePage === 'pos' && (
-          <PosPage
+          <DashboardPage
             plants={plants}
             rows={todayRows}
             invoices={invoices}
             monthlyRows={monthlyRows}
-            query={query}
-            setQuery={setQuery}
-            category={category}
-            setCategory={setCategory}
-            addToCart={addToCart}
-            cart={cart}
-            updateCartQty={updateCartQty}
-            customerDraft={customerDraft}
-            setCustomerDraft={setCustomerDraft}
-            paymentDraft={paymentDraft}
-            setPaymentDraft={setPaymentDraft}
-            cartTotals={cartTotals}
-            invoiceNo={nextInvoiceNo}
-            completeSale={completeSale}
-            completeSaleDisabled={completeSaleDisabled}
           />
         )}
-        {activePage === 'invoices' && <InvoicesPage invoices={invoices} setInvoices={setInvoices} isFormOpen={invoiceModalOpen} setIsFormOpen={setInvoiceModalOpen} isListOpen={invoiceListOpen} setIsListOpen={setInvoiceListOpen} nextInvoiceNo={nextInvoiceNo} />}
+        {activePage === 'invoices' && <InvoicesPage invoices={invoices} setInvoices={setInvoices} plants={plants} customers={customers} isFormOpen={invoiceModalOpen} setIsFormOpen={setInvoiceModalOpen} isListOpen={invoiceListOpen} setIsListOpen={setInvoiceListOpen} nextInvoiceNo={nextInvoiceNo} />}
         {activePage === 'stock' && <StockPage plants={plants} setPlants={setPlants} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} />}
         {activePage === 'customers' && (
           <CustomersPage
@@ -508,10 +393,6 @@ function App() {
       </main>
     </div>
   );
-}
-
-function PhoneIcon() {
-  return <span className="phone-dot" aria-hidden="true">09</span>;
 }
 
 function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, onAddCustomer }) {
@@ -538,8 +419,8 @@ function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, 
         <div className="hero-content">
           <div>
             <p className="eyebrow">Plant Zone Garden Center</p>
-            <h1>{activePage === 'pos' ? 'Plant Zone Garden Center POS' : page?.label || 'POS Sale'}</h1>
-            <p className="hero-copy">A modern POS for plant sales, social media customers, delivery orders, reservations, landscaping service, invoices, and export-ready daily/monthly data.</p>
+            <h1>{page?.label || 'Dashboard'}</h1>
+            <p className="hero-copy">{activePage === 'pos' ? 'Key sales, invoice, stock, customer, and source health in one overview.' : 'A modern POS for plant sales, social media customers, delivery orders, reservations, landscaping service, invoices, and export-ready daily/monthly data.'}</p>
             {(isInvoicesPage || isStockPage || isCustomersPage) && (
               <div className="hero-actions">
                 {isInvoicesPage && <button className="primary-button" onClick={onAddInvoice}><Plus size={17} /> Add Invoice</button>}
@@ -555,227 +436,43 @@ function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, 
   );
 }
 
-function PosPage({
-  plants,
-  rows,
-  invoices,
-  monthlyRows,
-  query,
-  setQuery,
-  category,
-  setCategory,
-  addToCart,
-  cart,
-  updateCartQty,
-  customerDraft,
-  setCustomerDraft,
-  paymentDraft,
-  setPaymentDraft,
-  cartTotals,
-  invoiceNo,
-  completeSale,
-  completeSaleDisabled,
-}) {
-  const visiblePlants = useMemo(() => plants.filter((plant) => {
-    const matchesSearch = [plant.plant_name, plant.plant_code, plant.plant_type].some((value) => clean(value).includes(clean(query)));
-    const matchesCategory = category === 'All' || plant.plant_type === category;
-    return matchesSearch && matchesCategory;
-  }), [plants, query, category]);
-  const [saleDraft, setSaleDraft] = useState({
-    plant_code: '',
-    plant_name: '',
-    plant_type: 'Indoor',
-    size: 'M',
-    quantity: 1,
-    unit_price: 0,
-    ws_price: 0,
-    source: 'Facebook',
-  });
+function DashboardPage({ plants, rows, invoices, monthlyRows }) {
   const todaySales = rows.reduce((sum, row) => sum + row.sale_amount, 0);
   const monthlySales = monthlyRows.reduce((sum, row) => sum + row.sale_amount, 0);
   const todayProfit = rows.reduce((sum, row) => sum + row.profit, 0);
-  const lowStock = plants.filter((plant) => plant.quantity <= plant.low_stock_limit).length;
-  const topSource = bestBy(rows.length ? rows : monthlyRows, 'customer_source') || 'Facebook';
+  const monthlyProfit = monthlyRows.reduce((sum, row) => sum + row.profit, 0);
+  const invoiceCount = new Set(rows.map((row) => row.invoice_no)).size;
+  const lowStockPlants = plants.filter((plant) => plant.quantity <= plant.low_stock_limit);
+  const stockUnits = plants.reduce((sum, plant) => sum + Number(plant.quantity || 0), 0);
+  const stockValue = plants.reduce((sum, plant) => sum + (Number(plant.quantity || 0) * Number(plant.unit_price || 0)), 0);
+  const topSource = bestBy(rows.length ? rows : monthlyRows, 'customer_source') || '-';
+  const recentInvoices = [...invoices].sort((a, b) => String(b.sale_date).localeCompare(String(a.sale_date))).slice(0, 5);
+  const sourceRows = rows.length ? rows : monthlyRows;
   const sourceTotals = sources.map((source) => ({
     source,
-    total: rows.filter((row) => row.customer_source === source).reduce((sum, row) => sum + row.sale_amount, 0),
+    total: sourceRows.filter((row) => row.customer_source === source).reduce((sum, row) => sum + row.sale_amount, 0),
   }));
   const sourceMax = Math.max(1, ...sourceTotals.map((item) => item.total));
 
-  const addDraftToCart = () => {
-    const plant = plants.find((item) => (
-      clean(item.plant_code) === clean(saleDraft.plant_code)
-      || clean(item.plant_name) === clean(saleDraft.plant_name)
-    ));
-    if (plant) addToCart(plant);
-  };
-
   return (
-    <section className="pos-dashboard">
+    <section className="dashboard-page">
       <div className="summary-grid reveal">
-        <MetricCard icon={<Banknote size={18} />} label="Today Sales" value={money(todaySales)} detail={`${new Set(rows.map((row) => row.invoice_no)).size} invoices`} />
-        <MetricCard icon={<TrendingUp size={18} />} label="Monthly Sales" value={money(monthlySales)} detail="July 2026" />
-        <MetricCard icon={<BadgeDollarSign size={18} />} label="Profit" value={money(todayProfit)} detail="WS price tracked" />
-        <MetricCard icon={<TriangleAlert size={18} />} label="Low Stock" value={lowStock} detail="need refill" />
-        <MetricCard icon={<Megaphone size={18} />} label="Top Source" value={topSource} detail="social order mix" />
+        <MetricCard icon={<Banknote size={18} />} label="Today Sales" value={money(todaySales)} detail={`${invoiceCount} invoices today`} />
+        <MetricCard icon={<TrendingUp size={18} />} label="Monthly Sales" value={money(monthlySales)} detail={`${money(monthlyProfit)} profit`} />
+        <MetricCard icon={<BadgeDollarSign size={18} />} label="Today Profit" value={money(todayProfit)} detail="Unit price minus WS cost" />
+        <MetricCard icon={<Package size={18} />} label="Stock Value" value={money(stockValue)} detail={`${stockUnits} units in stock`} />
+        <MetricCard icon={<TriangleAlert size={18} />} label="Low Stock" value={lowStockPlants.length} detail="Items needing refill" />
       </div>
 
-      <div className="page-grid pos-grid workbench">
-        <div className="panel reveal catalog-panel">
+      <div className="dashboard-grid">
+        <section className="panel reveal dashboard-panel">
           <div className="panel-title-row">
             <div className="panel-title">
-              <ShoppingCart size={20} />
-              <div>
-                <h2>Smart Sale Entry</h2>
-                <p>Use exact plant, customer, source, price, and invoice data in one screen.</p>
-              </div>
-            </div>
-            <button className="icon-button" aria-label="Filter catalog">
-              <Filter size={18} />
-            </button>
-          </div>
-          <div className="sale-layout">
-            <div className="entry-form">
-              <div className="form-grid">
-                <label>Plant Code<input value={saleDraft.plant_code} onChange={(event) => setSaleDraft({ ...saleDraft, plant_code: event.target.value })} placeholder="PZ-IN-101" /></label>
-                <label>Quantity<input type="number" value={saleDraft.quantity} onChange={(event) => setSaleDraft({ ...saleDraft, quantity: Number(event.target.value) })} /></label>
-                <label className="span-2">Plant Name<input value={saleDraft.plant_name} onChange={(event) => setSaleDraft({ ...saleDraft, plant_name: event.target.value })} placeholder="Monstera Deliciosa" /></label>
-                <label>Plant Type<select value={saleDraft.plant_type} onChange={(event) => setSaleDraft({ ...saleDraft, plant_type: event.target.value })}>{plantTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
-                <label>Size<select value={saleDraft.size} onChange={(event) => setSaleDraft({ ...saleDraft, size: event.target.value })}>{['XS', 'S', 'M', 'L', 'Set', 'Order'].map((size) => <option key={size}>{size}</option>)}</select></label>
-                <label>Unit Price<input type="number" value={saleDraft.unit_price} onChange={(event) => setSaleDraft({ ...saleDraft, unit_price: Number(event.target.value) })} /></label>
-                <label>WS Price<input type="number" value={saleDraft.ws_price} onChange={(event) => setSaleDraft({ ...saleDraft, ws_price: Number(event.target.value) })} /></label>
-                <label className="span-2">Customer Source<select value={saleDraft.source} onChange={(event) => {
-                  setSaleDraft({ ...saleDraft, source: event.target.value });
-                  setCustomerDraft({ ...customerDraft, source: event.target.value });
-                }}>{sources.map((source) => <option key={source}>{source}</option>)}</select></label>
-              </div>
-              <button className="primary-button wide" type="button" onClick={addDraftToCart}>
-                <Plus size={17} /> Add To Invoice
-              </button>
-            </div>
-            <div className="catalog-area">
-              <div className="toolbar">
-                <label className="search-field">
-                  <Search size={17} />
-                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Monstera or PZ-IN-101" />
-                </label>
-                <div className="category-scroll">
-                  {categories.map((item) => (
-                    <button key={item} className={`chip ${category === item ? 'active' : ''}`} onClick={() => setCategory(item)}>
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="plant-grid">
-                {visiblePlants.map((plant) => (
-                  <article className="plant-card" key={plant.id}>
-                    <img
-                      src={plant.image}
-                      alt={plant.plant_name}
-                      loading="lazy"
-                      onError={(event) => {
-                        event.currentTarget.src = 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=800&q=80';
-                      }}
-                    />
-                    <div className="plant-card-body">
-                      <div>
-                        <strong>{plant.plant_name}</strong>
-                        <span>{plant.plant_code}</span>
-                      </div>
-                      <dl className="plant-meta">
-                        <div><dt>Type</dt><dd>{plant.plant_type}</dd></div>
-                        <div><dt>Size</dt><dd>{plant.size}</dd></div>
-                        <div><dt>Qty</dt><dd className={plant.quantity <= plant.low_stock_limit ? 'danger-text' : ''}>{plant.quantity}</dd></div>
-                        <div><dt>Price</dt><dd>{money(plant.unit_price)}</dd></div>
-                        <div><dt>WS</dt><dd>{money(plant.ws_price)}</dd></div>
-                      </dl>
-                      <button className="mini-button" onClick={() => addToCart(plant)} disabled={plant.quantity <= 0} aria-label={`Add ${plant.plant_name}`}>
-                        <Plus size={17} />
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
+              <RadioTower size={20} />
+              <div><h2>Sales by Source</h2><p>{rows.length ? 'Today customer source mix.' : 'Monthly source mix shown because today has no rows.'}</p></div>
             </div>
           </div>
-        </div>
-
-        <aside className="panel reveal invoice-builder">
-        <div className="panel-title-row">
-          <div className="panel-title">
-            <ReceiptText size={20} />
-            <div>
-              <h2>Live Invoice</h2>
-              <p>Print, PDF, or share after sale.</p>
-            </div>
-          </div>
-        </div>
-        <div className="invoice-paper">
-          <div className="invoice-top">
-            <div>
-              <strong>Plant Zone</strong>
-              <span>Pyay, Bago Region</span>
-              <span>+95 9 756 040646</span>
-            </div>
-            <div className="invoice-no">
-              {invoiceNo}
-              <span>{today()}</span>
-            </div>
-          </div>
-        <div className="form-grid">
-          <label>Customer name<input required value={customerDraft.cus_name} onChange={(event) => setCustomerDraft({ ...customerDraft, cus_name: event.target.value })} /></label>
-          <label>Phone<input value={customerDraft.cus_ph} onChange={(event) => setCustomerDraft({ ...customerDraft, cus_ph: event.target.value })} /></label>
-          <label className="span-2">Address<input value={customerDraft.cus_address} onChange={(event) => setCustomerDraft({ ...customerDraft, cus_address: event.target.value })} /></label>
-          <label>Source<select value={customerDraft.source} onChange={(event) => setCustomerDraft({ ...customerDraft, source: event.target.value })}>{sources.map((source) => <option key={source}>{source}</option>)}</select></label>
-          <label>Status<select value={paymentDraft.payment_status} onChange={(event) => setPaymentDraft({ ...paymentDraft, payment_status: event.target.value })}>{paymentStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
-          <label className="span-2">Payment method<input value={paymentDraft.payment_method} onChange={(event) => setPaymentDraft({ ...paymentDraft, payment_method: event.target.value })} /></label>
-        </div>
-        <div className="cart-list">
-          {cart.length === 0 && <div className="empty-state">Cart is ready for the next plant sale.</div>}
-          {cart.map((item) => (
-            <div className="cart-row" key={item.id}>
-              <div>
-                <strong>{item.plant_name}</strong>
-                <span>{item.plant_code} - {money(item.unit_price)}</span>
-              </div>
-              <div className="stepper">
-                <button onClick={() => updateCartQty(item.id, -1)} aria-label={`Decrease ${item.plant_name}`}><Minus size={15} /></button>
-                <span>{item.cartQty}</span>
-                <button onClick={() => updateCartQty(item.id, 1)} aria-label={`Increase ${item.plant_name}`}><Plus size={15} /></button>
-              </div>
-            </div>
-          ))}
-        </div>
-        <Totals totals={cartTotals} />
-        </div>
-        <div className="action-row">
-          <button className="primary-button wide" disabled={completeSaleDisabled} onClick={completeSale}>
-            <CheckCircle2 size={18} /> Complete sale
-          </button>
-          <button className="ghost-button" onClick={() => window.print()}><Printer size={17} /> Print</button>
-          <button className="ghost-button" onClick={() => shareText(`${invoiceNo} sale amount ${money(cartTotals.subtotal)}`)}><Send size={17} /> Share</button>
-        </div>
-      </aside>
-      </div>
-
-      <div className="data-sections">
-        <div className="panel reveal">
-          <div className="panel-title-row">
-            <div className="panel-title">
-              <Database size={20} />
-              <div><h2>Daily Sales Data List</h2><p>All requested sale fields, ready for export.</p></div>
-            </div>
-            <div className="export-actions">
-              <button className="ghost-button" onClick={() => exportRows('plant-zone-today', rows, 'xls')}><FileSpreadsheet size={17} /> Excel</button>
-              <button className="ghost-button" onClick={() => window.print()}><Printer size={17} /> Print</button>
-            </div>
-          </div>
-          <DataTable rows={rows.slice(0, 8)} />
-        </div>
-        <aside className="insight-stack">
-          <section className="insight-card">
-            <h3><RadioTower size={18} /> Customer Source</h3>
+          <div className="source-list">
             {sourceTotals.map((item) => (
               <div className="source-row" key={item.source}>
                 <span>{item.source}</span>
@@ -783,22 +480,45 @@ function PosPage({
                 <b>{money(item.total)}</b>
               </div>
             ))}
-          </section>
-          <section className="insight-card">
-            <h3><Blocks size={18} /> Data Structure</h3>
-            {['Plants: name, code, type, size, qty, unit, WS', 'Customers: name, phone, address, source', 'Invoices: invoice no, date, payment, sale amount', 'Reports: daily list, monthly list, source totals'].map((line) => (
-              <div className="data-pill" key={line}><Leaf size={17} /><span>{line}</span></div>
-            ))}
-          </section>
-          <section className="insight-card">
-            <h3><FileOutput size={18} /> Extract Functions</h3>
-            <div className="export-grid">
-              <button className="export-button" onClick={() => exportRows('plant-zone-daily-data', rows, 'xls')}><span><strong>Daily Excel</strong><small>Selected day rows</small></span><Download size={16} /></button>
-              <button className="export-button" onClick={() => exportRows('plant-zone-monthly-data', monthlyRows, 'xls')}><span><strong>Monthly Excel</strong><small>Grouped report rows</small></span><Download size={16} /></button>
-              <button className="export-button" onClick={() => window.print()}><span><strong>Invoice PDF</strong><small>Print or share</small></span><Printer size={16} /></button>
+          </div>
+          <div className="dashboard-note"><Megaphone size={16} /> Top source: {topSource}</div>
+        </section>
+
+        <section className="panel reveal dashboard-panel">
+          <div className="panel-title-row">
+            <div className="panel-title">
+              <ReceiptText size={20} />
+              <div><h2>Recent Invoices</h2><p>Latest sales records.</p></div>
             </div>
-          </section>
-        </aside>
+          </div>
+          <div className="dashboard-list">
+            {recentInvoices.map((invoice) => (
+              <div className="dashboard-list-row" key={invoice.id}>
+                <span><strong>{invoice.invoice_no}</strong><small>{invoice.customer.cus_name} - {invoice.sale_date}</small></span>
+                <b>{money(invoice.sale_amount)}</b>
+              </div>
+            ))}
+            {recentInvoices.length === 0 && <div className="empty-state">No invoices yet.</div>}
+          </div>
+        </section>
+
+        <section className="panel reveal dashboard-panel">
+          <div className="panel-title-row">
+            <div className="panel-title">
+              <TriangleAlert size={20} />
+              <div><h2>Stock Attention</h2><p>Plants at or below their low-stock limit.</p></div>
+            </div>
+          </div>
+          <div className="dashboard-list">
+            {lowStockPlants.slice(0, 6).map((plant) => (
+              <div className="dashboard-list-row" key={plant.id}>
+                <span><strong>{plant.plant_name}</strong><small>{plant.plant_code} - {plant.plant_type} / Size {plant.size}</small></span>
+                <b>{plant.quantity}</b>
+              </div>
+            ))}
+            {lowStockPlants.length === 0 && <div className="empty-state">Stock levels look healthy.</div>}
+          </div>
+        </section>
       </div>
     </section>
   );
@@ -815,8 +535,8 @@ function Totals({ totals }) {
   );
 }
 
-function InvoicesPage({ invoices, setInvoices, isFormOpen, setIsFormOpen, isListOpen, setIsListOpen, nextInvoiceNo }) {
-  const emptyItem = { plant_name: '', plant_code: '', plant_type: 'Indoor', size: 'M', quantity: 1, unit_price: 0, ws_price: 0 };
+function InvoicesPage({ invoices, setInvoices, plants, customers, isFormOpen, setIsFormOpen, isListOpen, setIsListOpen, nextInvoiceNo }) {
+  const emptyItem = { plant_id: '', plant_name: '', plant_code: '', plant_type: 'Indoor', size: 'M', quantity: 1, unit_price: 0, ws_price: 0 };
   const emptyDraft = {
     invoice_no: nextInvoiceNo,
     sale_date: today(),
@@ -870,6 +590,7 @@ function InvoicesPage({ invoices, setInvoices, isFormOpen, setIsFormOpen, isList
       payment_method: invoice.payment_method,
       customer: { ...invoice.customer },
       items: invoice.items.map((item) => ({
+        plant_id: item.plant_id || '',
         plant_name: item.plant_name,
         plant_code: item.plant_code,
         plant_type: item.plant_type,
@@ -881,6 +602,41 @@ function InvoicesPage({ invoices, setInvoices, isFormOpen, setIsFormOpen, isList
     });
     setEditingId(invoice.id);
     setIsFormOpen(true);
+  };
+
+  const selectCustomer = (customerId) => {
+    const customer = customers.find((item) => String(item.id) === customerId);
+    if (!customer) {
+      setDraft((current) => ({
+        ...current,
+        customer: { cus_name: '', cus_ph: '', cus_address: '', source: current.customer.source || 'Facebook' },
+      }));
+      return;
+    }
+    setDraft((current) => ({
+      ...current,
+      customer: {
+        id: customer.id,
+        cus_name: customer.cus_name || '',
+        cus_ph: customer.cus_ph || '',
+        cus_address: customer.cus_address || '',
+        source: customer.source || 'Facebook',
+      },
+    }));
+  };
+
+  const selectPlant = (index, plantId) => {
+    const plant = plants.find((item) => String(item.id) === plantId);
+    if (!plant) return;
+    updateDraftItem(index, {
+      plant_id: plant.id,
+      plant_name: plant.plant_name,
+      plant_code: plant.plant_code,
+      plant_type: plant.plant_type,
+      size: plant.size,
+      unit_price: plant.unit_price,
+      ws_price: plant.ws_price,
+    });
   };
 
   const updateDraftItem = (index, updates) => {
@@ -982,13 +738,14 @@ function InvoicesPage({ invoices, setInvoices, isFormOpen, setIsFormOpen, isList
             <div className="modal-title-row">
               <div>
                 <h2 id="invoice-modal-title">{editingId ? 'Edit Invoice' : 'Add Invoice'}</h2>
-                <p>{editingId ? 'Update invoice customer, payment, and item rows.' : 'Create a manual invoice record.'}</p>
+                <p>{editingId ? 'Update invoice customer, payment, and item rows.' : 'Choose stock items and customer details for this invoice.'}</p>
               </div>
               <button className="icon-button" onClick={closeForm} aria-label="Close invoice form"><X size={17} /></button>
             </div>
             <div className="form-grid invoice-form">
               <label>Invoice no<input value={draft.invoice_no} onChange={(event) => setDraft({ ...draft, invoice_no: event.target.value })} /></label>
               <label>Sale date<input type="date" value={draft.sale_date} onChange={(event) => setDraft({ ...draft, sale_date: event.target.value })} /></label>
+              <label className="span-2">Choose customer<select value={draft.customer.id || ''} onChange={(event) => selectCustomer(event.target.value)}><option value="">New customer / not saved yet</option>{customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.cus_name} - {customer.cus_ph || customer.source}</option>)}</select></label>
               <label>Customer name<input value={draft.customer.cus_name} onChange={(event) => setDraft({ ...draft, customer: { ...draft.customer, cus_name: event.target.value } })} /></label>
               <label>Phone<input value={draft.customer.cus_ph} onChange={(event) => setDraft({ ...draft, customer: { ...draft.customer, cus_ph: event.target.value } })} /></label>
               <label>Address<input value={draft.customer.cus_address} onChange={(event) => setDraft({ ...draft, customer: { ...draft.customer, cus_address: event.target.value } })} /></label>
@@ -999,8 +756,7 @@ function InvoicesPage({ invoices, setInvoices, isFormOpen, setIsFormOpen, isList
             <div className="invoice-item-editor">
               {draft.items.map((item, index) => (
                 <div className="invoice-edit-row" key={`draft-item-${index}`}>
-                  <label>Plant<input value={item.plant_name} onChange={(event) => updateDraftItem(index, { plant_name: event.target.value })} /></label>
-                  <label>Code<input value={item.plant_code} onChange={(event) => updateDraftItem(index, { plant_code: event.target.value })} /></label>
+                  <label>Plant<select value={item.plant_id || ''} onChange={(event) => selectPlant(index, event.target.value)}><option value="">Choose stock plant</option>{plants.map((plant) => <option value={plant.id} key={plant.id}>{plant.plant_name} - {plant.plant_code}</option>)}</select></label>
                   <label>Qty<input type="number" value={item.quantity} onChange={(event) => updateDraftItem(index, { quantity: Number(event.target.value) })} /></label>
                   <label>Unit<input type="number" value={item.unit_price} onChange={(event) => updateDraftItem(index, { unit_price: Number(event.target.value) })} /></label>
                   <label>WS<input type="number" value={item.ws_price} onChange={(event) => updateDraftItem(index, { ws_price: Number(event.target.value) })} /></label>
@@ -1034,53 +790,78 @@ function InvoiceDetail({ invoice, onEdit, onDelete }) {
           <button className="ghost-button danger" onClick={() => onDelete(invoice.id)}><Trash2 size={17} /> Delete</button>
         </div>
       </div>
-      <div className="shop-invoice">
-        <div className="shop-invoice-head">
-          <div>
-            <span className="invoice-brand-mark"><Leaf size={20} /></span>
-            <h2>Plant Zone Garden Center</h2>
-            <p>Pyay, Bago Region</p>
-            <p>+95 9 756 040646</p>
-          </div>
-          <div className="invoice-stamp">
-            <span>Invoice</span>
-            <strong>{invoice.invoice_no}</strong>
-            <small>{invoice.sale_date}</small>
-          </div>
-        </div>
-        <div className="invoice-info-grid">
+      <div className="invoice-workspace">
+        <div className="invoice-context" aria-label="Invoice summary">
           <section>
-            <span>Bill to</span>
+            <span>Selected invoice</span>
+            <strong>{invoice.invoice_no}</strong>
+            <p>{invoice.items.length} item{invoice.items.length === 1 ? '' : 's'} sold on {invoice.sale_date}</p>
+          </section>
+          <section>
+            <span>Customer</span>
             <strong>{invoice.customer.cus_name}</strong>
             <p>{invoice.customer.cus_ph}</p>
-            <p>{invoice.customer.cus_address}</p>
+            <p>{invoice.customer.source}</p>
           </section>
           <section>
             <span>Payment</span>
             <strong>{invoice.payment_status}</strong>
             <p>{invoice.payment_method}</p>
-            <p>{invoice.customer.source}</p>
+          </section>
+          <section className="invoice-context-total">
+            <span>Sale amount</span>
+            <strong>{money(invoice.sale_amount)}</strong>
+            <p>Profit {money(invoice.profit_total)}</p>
           </section>
         </div>
-        <div className="invoice-table-wrap">
-          <table className="shop-invoice-table">
-            <thead><tr><th>Item</th><th>Code</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
-            <tbody>
-              {invoice.items.map((item) => (
-                <tr key={`${invoice.id}-${item.plant_code}`}>
-                  <td><strong>{item.plant_name}</strong><small>{item.plant_type} / Size {item.size}</small></td>
-                  <td>{item.plant_code}</td>
-                  <td>{item.quantity}</td>
-                  <td>{money(item.unit_price)}</td>
-                  <td>{money(item.sale_amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="invoice-bottom">
-          <p>Thank you for shopping with Plant Zone.</p>
-          <Totals totals={{ subtotal: invoice.subtotal, wholesale: invoice.wholesale_total, profit: invoice.profit_total }} />
+        <div className="shop-invoice">
+          <div className="shop-invoice-head">
+            <div>
+              <span className="invoice-brand-mark"><Leaf size={20} /></span>
+              <h2>Plant Zone Garden Center</h2>
+              <p>Pyay, Bago Region</p>
+              <p>+95 9 756 040646</p>
+            </div>
+            <div className="invoice-stamp">
+              <span>Invoice</span>
+              <strong>{invoice.invoice_no}</strong>
+              <small>{invoice.sale_date}</small>
+            </div>
+          </div>
+          <div className="invoice-info-grid">
+            <section>
+              <span>Bill to</span>
+              <strong>{invoice.customer.cus_name}</strong>
+              <p>{invoice.customer.cus_ph}</p>
+              <p>{invoice.customer.cus_address}</p>
+            </section>
+            <section>
+              <span>Payment</span>
+              <strong>{invoice.payment_status}</strong>
+              <p>{invoice.payment_method}</p>
+              <p>{invoice.customer.source}</p>
+            </section>
+          </div>
+          <div className="invoice-table-wrap">
+            <table className="shop-invoice-table">
+              <thead><tr><th>Item</th><th>Code</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
+              <tbody>
+                {invoice.items.map((item) => (
+                  <tr key={`${invoice.id}-${item.plant_code}`}>
+                    <td><strong>{item.plant_name}</strong><small>{item.plant_type} / Size {item.size}</small></td>
+                    <td>{item.plant_code}</td>
+                    <td>{item.quantity}</td>
+                    <td>{money(item.unit_price)}</td>
+                    <td>{money(item.sale_amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="invoice-bottom">
+            <p>Thank you for shopping with Plant Zone.</p>
+            <Totals totals={{ subtotal: invoice.subtotal, wholesale: invoice.wholesale_total, profit: invoice.profit_total }} />
+          </div>
         </div>
       </div>
     </aside>
@@ -1091,10 +872,27 @@ function StockPage({ plants, setPlants, isFormOpen, setIsFormOpen }) {
   const emptyPlant = { plant_name: '', plant_code: '', plant_type: 'Indoor', size: 'M', quantity: 0, unit_price: 0, ws_price: 0, low_stock_limit: 5, image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=800&q=80' };
   const [draft, setDraft] = useState(emptyPlant);
   const [editingId, setEditingId] = useState(null);
+  const [filters, setFilters] = useState({ type: '', size: '', minPrice: '', maxPrice: '' });
   const [history, setHistory] = usePersistentState('plant-zone-stock-history', [
     { id: 1, date: '2026-07-08', plant_name: 'Monstera Deliciosa', type: 'Stock out', quantity: 2 },
     { id: 2, date: '2026-07-06', plant_name: 'Ceramic Pot Set', type: 'Stock in', quantity: 20 },
   ]);
+  const sizes = useMemo(() => Array.from(new Set(plants.map((plant) => plant.size).filter(Boolean))).sort(), [plants]);
+  const stockTotals = useMemo(() => plants.reduce((totals, plant) => ({
+    units: totals.units + Number(plant.quantity || 0),
+    value: totals.value + (Number(plant.quantity || 0) * Number(plant.unit_price || 0)),
+    lowStock: totals.lowStock + (Number(plant.quantity || 0) <= Number(plant.low_stock_limit || 0) ? 1 : 0),
+  }), { units: 0, value: 0, lowStock: 0 }), [plants]);
+  const filteredPlants = useMemo(() => plants.filter((plant) => {
+    const minPrice = filters.minPrice === '' ? null : Number(filters.minPrice);
+    const maxPrice = filters.maxPrice === '' ? null : Number(filters.maxPrice);
+    return (
+      (!filters.type || plant.plant_type === filters.type)
+      && (!filters.size || plant.size === filters.size)
+      && (minPrice === null || Number(plant.unit_price || 0) >= minPrice)
+      && (maxPrice === null || Number(plant.unit_price || 0) <= maxPrice)
+    );
+  }), [plants, filters]);
 
   const savePlant = () => {
     if (!draft.plant_name || !draft.plant_code) return;
@@ -1135,11 +933,22 @@ function StockPage({ plants, setPlants, isFormOpen, setIsFormOpen }) {
     <>
       <section className="page-grid stock-grid">
         <div className="panel reveal stock-panel">
-          <div className="panel-title-row">
-            <div><h2>Plant Stock</h2><p>Full stock list with quick edits and low-stock status.</p></div>
+          <div className="stock-summary-strip">
+            <div><span>Total plants</span><strong>{plants.length}</strong></div>
+            <div><span>Total units</span><strong>{stockTotals.units}</strong></div>
+            <div><span>Stock value</span><strong>{money(stockTotals.value)}</strong></div>
+            <div><span>Low stock</span><strong>{stockTotals.lowStock}</strong></div>
           </div>
+          <div className="stock-filter-bar">
+            <label>Type<select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="">All types</option>{plantTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
+            <label>Size<select value={filters.size} onChange={(event) => setFilters({ ...filters, size: event.target.value })}><option value="">All sizes</option>{sizes.map((size) => <option key={size}>{size}</option>)}</select></label>
+            <label>Min price<input type="number" value={filters.minPrice} onChange={(event) => setFilters({ ...filters, minPrice: event.target.value })} placeholder="0" /></label>
+            <label>Max price<input type="number" value={filters.maxPrice} onChange={(event) => setFilters({ ...filters, maxPrice: event.target.value })} placeholder="100000" /></label>
+            <button className="ghost-button" type="button" onClick={() => setFilters({ type: '', size: '', minPrice: '', maxPrice: '' })}><RotateCcw size={16} /> Clear</button>
+          </div>
+          <div className="stock-result-note">{filteredPlants.length} of {plants.length} plants shown</div>
         <div className="stock-card-grid">
-          {plants.map((plant) => (
+          {filteredPlants.map((plant) => (
             <article key={plant.id} className={`stock-card ${plant.quantity <= plant.low_stock_limit ? 'low-stock-card' : ''}`}>
               <img src={plant.image || emptyPlant.image} alt={plant.plant_name} onError={(event) => { event.currentTarget.src = emptyPlant.image; }} />
               <div className="stock-card-main">
@@ -1167,6 +976,7 @@ function StockPage({ plants, setPlants, isFormOpen, setIsFormOpen }) {
               </div>
             </article>
           ))}
+          {filteredPlants.length === 0 && <div className="empty-state">No plants match these filters.</div>}
         </div>
       </div>
       <footer className="panel reveal stock-footer">
@@ -1571,12 +1381,6 @@ function shareText(text) {
     navigator.clipboard?.writeText(text);
     alert('Invoice record copied for sharing.');
   }
-}
-
-function upsertCustomer(customers, customer) {
-  const existing = customers.find((item) => item.cus_ph && item.cus_ph === customer.cus_ph);
-  if (!existing) return [customer, ...customers];
-  return customers.map((item) => (item.id === existing.id ? { ...item, ...customer, id: existing.id, updated_at: today() } : item));
 }
 
 function bestBy(rows, key) {
