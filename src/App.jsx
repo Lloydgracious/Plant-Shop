@@ -1,5 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import * as THREE from 'three';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
   BadgeDollarSign,
@@ -35,6 +34,17 @@ import {
 const sources = ['Facebook', 'TikTok', 'Viber', 'Phone'];
 const paymentStatuses = ['Paid', 'Pending', 'Partial'];
 const plantTypes = ['Indoor', 'Outdoor', 'Succulent', 'Cactus', 'Flowers', 'Decorative', 'Garden Center', 'Landscaping'];
+
+const heroPlantImages = {
+  pos: 'https://upload.wikimedia.org/wikipedia/commons/5/5a/Crassula_ovata_700.jpg',
+  invoices: 'https://upload.wikimedia.org/wikipedia/commons/c/cf/Zamioculcas_zamiifolia_1.jpg',
+  stock: 'https://upload.wikimedia.org/wikipedia/commons/f/fb/Snake_Plant_%28Sansevieria_trifasciata_%27Laurentii%27%29.jpg',
+  customers: 'https://upload.wikimedia.org/wikipedia/commons/6/6d/Pilea_peperomioides_Chinese_money_plant.jpg',
+  daily: 'https://upload.wikimedia.org/wikipedia/commons/b/b9/Haworthia_cymbiformis_1.jpg',
+  monthly: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/Senecio_rowleyanus.jpg',
+  export: 'https://upload.wikimedia.org/wikipedia/commons/e/e2/Dracaena_sanderiana_2.jpg',
+  settings: 'https://upload.wikimedia.org/wikipedia/commons/3/3f/A_potted_aloe_vera_plant.jpg',
+};
 
 const samplePlants = [
   {
@@ -206,106 +216,6 @@ function usePersistentState(key, initialValue) {
   return [state, setState];
 }
 
-function BotanicalScene() {
-  const mountRef = useRef(null);
-
-  useEffect(() => {
-    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const mount = mountRef.current;
-    if (!mount || prefersReduced) return undefined;
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-    camera.position.set(0, 0, 8);
-
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    mount.appendChild(renderer.domElement);
-
-    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-    scene.add(ambient);
-    const light = new THREE.DirectionalLight(0xffffff, 1.6);
-    light.position.set(2, 4, 5);
-    scene.add(light);
-
-    const group = new THREE.Group();
-    scene.add(group);
-
-    const leafShape = new THREE.Shape();
-    leafShape.moveTo(0, 0);
-    leafShape.bezierCurveTo(0.55, 0.25, 0.55, 1.1, 0, 1.55);
-    leafShape.bezierCurveTo(-0.55, 1.1, -0.55, 0.25, 0, 0);
-
-    const materials = [
-      new THREE.MeshStandardMaterial({ color: '#2E7D32', roughness: 0.65, metalness: 0.02 }),
-      new THREE.MeshStandardMaterial({ color: '#6B8E23', roughness: 0.75, metalness: 0.01 }),
-      new THREE.MeshStandardMaterial({ color: '#A7C957', roughness: 0.7, metalness: 0.01 }),
-    ];
-
-    Array.from({ length: 18 }).forEach((_, index) => {
-      const geometry = new THREE.ShapeGeometry(leafShape);
-      const mesh = new THREE.Mesh(geometry, materials[index % materials.length]);
-      mesh.position.set((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 3.8, (Math.random() - 0.5) * 2);
-      mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-      const scale = 0.22 + Math.random() * 0.22;
-      mesh.scale.set(scale, scale, scale);
-      mesh.userData = { speed: 0.003 + Math.random() * 0.007, drift: Math.random() * Math.PI * 2 };
-      group.add(mesh);
-    });
-
-    const stem = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.035, 0.045, 4.4, 16),
-      new THREE.MeshStandardMaterial({ color: '#355E3B', roughness: 0.8 }),
-    );
-    stem.rotation.z = 0.55;
-    stem.position.set(-1.8, -0.15, -0.4);
-    group.add(stem);
-
-    const pot = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.65, 0.82, 0.75, 32),
-      new THREE.MeshStandardMaterial({ color: '#EFE7DA', roughness: 0.55 }),
-    );
-    pot.position.set(-2.3, -1.45, 0.1);
-    group.add(pot);
-
-    const resize = () => {
-      const { clientWidth, clientHeight } = mount;
-      camera.aspect = Math.max(clientWidth, 1) / Math.max(clientHeight, 1);
-      camera.updateProjectionMatrix();
-      renderer.setSize(clientWidth, clientHeight);
-    };
-    resize();
-    window.addEventListener('resize', resize);
-
-    let frame;
-    const animate = () => {
-      frame = requestAnimationFrame(animate);
-      group.rotation.y += 0.002;
-      group.children.forEach((child) => {
-        if (child.userData.speed) {
-          child.rotation.z += child.userData.speed;
-          child.position.y += Math.sin(Date.now() * child.userData.speed * 0.25 + child.userData.drift) * 0.0018;
-        }
-      });
-      renderer.render(scene, camera);
-    };
-    animate();
-
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener('resize', resize);
-      renderer.dispose();
-      materials.forEach((material) => material.dispose());
-      group.traverse((child) => {
-        if (child.geometry) child.geometry.dispose();
-      });
-      mount.removeChild(renderer.domElement);
-    };
-  }, []);
-
-  return <div ref={mountRef} className="botanical-scene" aria-hidden="true" />;
-}
-
 function App() {
   const [activePage, setActivePage] = useState('pos');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -397,6 +307,7 @@ function App() {
 
 function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, onAddCustomer }) {
   const page = navItems.find((item) => item.id === activePage);
+  const heroPlant = heroPlantImages[activePage] || heroPlantImages.pos;
   const isInvoicesPage = activePage === 'invoices';
   const isStockPage = activePage === 'stock';
   const isCustomersPage = activePage === 'customers';
@@ -414,8 +325,17 @@ function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, 
         <button className="soft-button"><CalendarDays size={17} /> 08 Jul 2026</button>
         <button className="icon-button" aria-label="Notifications"><Bell size={18} /></button>
       </header>
-      <section className="hero">
-        <BotanicalScene />
+      <section className={`hero hero-${activePage}`}>
+        <div className="hero-plant-photo" aria-hidden="true">
+          <img
+            src={heroPlant}
+            alt=""
+            loading="lazy"
+            onError={(event) => {
+              event.currentTarget.src = 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=900&q=80';
+            }}
+          />
+        </div>
         <div className="hero-content">
           <div>
             <p className="eyebrow">Plant Zone Garden Center</p>
