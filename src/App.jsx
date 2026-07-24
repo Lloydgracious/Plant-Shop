@@ -397,7 +397,7 @@ function DashboardPage({ plants, rows, invoices, monthlyRows }) {
       <div className="summary-grid reveal">
         <MetricCard icon={<Banknote size={18} />} label="Today Sales" value={money(todaySales)} detail={`${invoiceCount} invoices today`} />
         <MetricCard icon={<TrendingUp size={18} />} label="Monthly Sales" value={money(monthlySales)} detail={`${money(monthlyProfit)} profit`} />
-        <MetricCard icon={<BadgeDollarSign size={18} />} label="Today Profit" value={money(todayProfit)} detail="Unit price minus WS cost" />
+        <MetricCard icon={<BadgeDollarSign size={18} />} label="Today Profit" value={money(todayProfit)} detail="Selling price minus original cost" />
         <MetricCard icon={<Package size={18} />} label="Stock Value" value={money(stockValue)} detail={`${stockUnits} units in stock`} />
         <MetricCard icon={<TriangleAlert size={18} />} label="Low Stock" value={lowStockPlants.length} detail="Items needing refill" />
       </div>
@@ -476,19 +476,41 @@ function Totals({ totals }) {
 }
 
 function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isFormOpen, setIsFormOpen, adjustments, setAdjustments, nextInvoiceNo }) {
-  const adjustmentTypes = ['Customer return', 'Damaged plant return', 'Refund', 'Exchange'];
+  const [processTab, setProcessTab] = useState('return');
+  const [processNotice, setProcessNotice] = useState(null);
   const [draft, setDraft] = useState({
     plant_id: plants[0]?.id || '',
     customer_id: '',
-    type: 'Customer return',
     quantity: 1,
+    return_condition: 'Good — return to available stock',
+    refund_type: 'No refund',
+    damage_cause: 'Shop damage',
+    damage_result: 'Move to damaged stock',
     amount: 0,
     reason: '',
-    stock_action: 'Add to stock',
   });
   const selectedPlant = plants.find((plant) => String(plant.id) === String(draft.plant_id));
   const selectedCustomer = customers.find((customer) => String(customer.id) === String(draft.customer_id));
   const stageCount = (stage) => invoices.filter((invoice) => saleStageFor(invoice) === stage).length;
+  const requestedQuantity = Math.max(0, Number(draft.quantity) || 0);
+  const processQuantity = processTab === 'damage'
+    ? Math.min(requestedQuantity, Number(selectedPlant?.quantity || 0))
+    : requestedQuantity;
+  const stockEffect = useMemo(() => {
+    const effect = { available: 0, damaged: 0, writtenOff: 0, supplierReturn: 0 };
+    if (!selectedPlant || !processQuantity) return effect;
+    if (processTab === 'return') {
+      if (draft.return_condition.startsWith('Good')) effect.available = processQuantity;
+      if (draft.return_condition.startsWith('Damaged')) effect.damaged = processQuantity;
+      if (draft.return_condition.startsWith('Dead')) effect.writtenOff = processQuantity;
+      return effect;
+    }
+    effect.available = -processQuantity;
+    if (['Keep for recovery', 'Move to damaged stock'].includes(draft.damage_result)) effect.damaged = processQuantity;
+    if (draft.damage_result === 'Write off') effect.writtenOff = processQuantity;
+    if (draft.damage_result === 'Return to supplier') effect.supplierReturn = processQuantity;
+    return effect;
+  }, [selectedPlant, processQuantity, processTab, draft.return_condition, draft.damage_result]);
 
   const updateSaleStage = (invoice, stage) => {
     if (!invoice.stock_deducted) {
@@ -511,29 +533,63 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
     setInvoices((current) => current.map((item) => item.id === invoice.id ? { ...item, paid_amount: paidAmount, payment_status: paymentStatus } : item));
   };
 
-  const finishAdjustment = () => {
-    const quantity = Math.max(Number(draft.quantity) || 0, 0);
-    if (!selectedPlant || !quantity || !draft.reason.trim()) return;
-    if (draft.stock_action !== 'No stock change') {
-      const direction = draft.stock_action === 'Add to stock' ? 1 : -1;
-      setPlants((current) => current.map((plant) => (
-        String(plant.id) === String(selectedPlant.id)
-          ? { ...plant, quantity: Math.max(0, Number(plant.quantity || 0) + (direction * quantity)) }
-          : plant
-      )));
-    }
-    setAdjustments((current) => [{
-      ...draft,
-      id: Date.now(),
-      customer_name: selectedCustomer?.cus_name || 'Walk-in / no customer',
+  const applyProcess = () => {
+    if (!selectedPlant || !processQuantity || !draft.reason.trim()) return;
+    const processId = Date.now();
+    const processLabel = processTab === 'return' ? 'Customer return' : 'Plant damage';
+    const outcome = processTab === 'return' ? draft.return_condition : draft.damage_result;
+    const processRecord = {
+      id: processId,
+      process_group: processTab,
+      type: processLabel,
+      outcome,
+      cause: processTab === 'damage' ? draft.damage_cause : '',
+      refund_type: processTab === 'return' ? draft.refund_type : 'No refund',
+      plant_id: selectedPlant.id,
       plant_name: selectedPlant.plant_name,
       plant_code: selectedPlant.plant_code,
+      customer_id: processTab === 'return' ? draft.customer_id : '',
+      customer_name: processTab === 'return' ? selectedCustomer?.cus_name || 'Walk-in / no customer' : 'Inventory',
       date: today(),
-      quantity,
-      amount: Number(draft.amount || 0),
+      quantity: processQuantity,
+      amount: processTab === 'return' && draft.refund_type !== 'No refund' ? Number(draft.amount || 0) : 0,
+      reason: draft.reason.trim(),
+      stock_delta: stockEffect.available,
+      damaged_delta: stockEffect.damaged,
+      written_off_delta: stockEffect.writtenOff,
+      supplier_return_delta: stockEffect.supplierReturn,
       status: 'Completed',
-    }, ...current]);
+    };
+    setPlants((current) => current.map((plant) => (
+      String(plant.id) === String(selectedPlant.id)
+        ? {
+          ...plant,
+          quantity: Math.max(0, Number(plant.quantity || 0) + stockEffect.available),
+          damaged_quantity: Math.max(0, Number(plant.damaged_quantity || 0) + stockEffect.damaged),
+          written_off_quantity: Math.max(0, Number(plant.written_off_quantity || 0) + stockEffect.writtenOff),
+          updated_at: today(),
+        }
+        : plant
+    )));
+    setAdjustments((current) => [processRecord, ...current]);
+    setProcessNotice(processRecord);
     setDraft((current) => ({ ...current, quantity: 1, amount: 0, reason: '' }));
+  };
+
+  const undoLastProcess = () => {
+    if (!processNotice) return;
+    setPlants((current) => current.map((plant) => (
+      String(plant.id) === String(processNotice.plant_id)
+        ? {
+          ...plant,
+          quantity: Math.max(0, Number(plant.quantity || 0) - Number(processNotice.stock_delta || 0)),
+          damaged_quantity: Math.max(0, Number(plant.damaged_quantity || 0) - Number(processNotice.damaged_delta || 0)),
+          written_off_quantity: Math.max(0, Number(plant.written_off_quantity || 0) - Number(processNotice.written_off_delta || 0)),
+        }
+        : plant
+    )));
+    setAdjustments((current) => current.filter((item) => item.id !== processNotice.id));
+    setProcessNotice(null);
   };
 
   return (
@@ -567,39 +623,79 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
         </div>
       </section>
 
-      <div className="sales-operations-grid">
-        <section className="panel reveal">
-          <div className="panel-title-row">
-            <div className="panel-title"><RotateCcw size={20} /><div><h2>Return / Damage Process</h2><p>Choose an item, an optional customer, and the exact stock change to apply.</p></div></div>
+      <section className="panel reveal process-center">
+        <div className="panel-title-row">
+          <div className="panel-title"><RotateCcw size={20} /><div><h2>Returns & Plant Damage</h2><p>Choose a process, enter the details, review the stock result, then confirm.</p></div></div>
+        </div>
+        <div className="process-tabs" role="tablist" aria-label="Stock process">
+          <button className={processTab === 'return' ? 'active' : ''} onClick={() => { setProcessTab('return'); setProcessNotice(null); }}><RotateCcw size={17} /> Customer Return</button>
+          <button className={processTab === 'damage' ? 'active' : ''} onClick={() => { setProcessTab('damage'); setProcessNotice(null); }}><TriangleAlert size={17} /> Plant Damage</button>
+        </div>
+        {processNotice && (
+          <div className="process-success" role="status">
+            <span><strong>{processNotice.quantity} × {processNotice.plant_name} processed successfully.</strong><small>{processNotice.outcome}</small></span>
+            <button className="ghost-button" onClick={undoLastProcess}>Undo</button>
           </div>
+        )}
+        <div className="process-workspace">
           <div className="form-grid adjustment-form">
-            <label className="span-2">Plant item<select value={draft.plant_id} onChange={(event) => setDraft({ ...draft, plant_id: event.target.value })}><option value="">Choose an item</option>{plants.map((plant) => <option value={plant.id} key={plant.id}>{plant.plant_name} — {plant.plant_code} — stock {plant.quantity}</option>)}</select></label>
-            <label className="span-2">Customer (optional)<select value={draft.customer_id} onChange={(event) => setDraft({ ...draft, customer_id: event.target.value })}><option value="">Walk-in / no customer</option>{customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.cus_name} — {customer.cus_ph}</option>)}</select></label>
-            <label>Process<select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value })}>{adjustmentTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
-            <label>Stock command<select value={draft.stock_action} onChange={(event) => setDraft({ ...draft, stock_action: event.target.value })}><option>Add to stock</option><option>Remove from stock</option><option>No stock change</option></select></label>
-            <label>Quantity<input type="number" min="1" value={draft.quantity} onChange={(event) => setDraft({ ...draft, quantity: event.target.value })} /><small>{selectedPlant ? `Current stock: ${selectedPlant.quantity}` : 'Choose an item first'}</small></label>
-            <label>Refund amount<input type="number" min="0" value={draft.amount} onChange={(event) => setDraft({ ...draft, amount: event.target.value })} /></label>
-            <label className="span-2">Reason / notes<textarea value={draft.reason} onChange={(event) => setDraft({ ...draft, reason: event.target.value })} placeholder="Why is this item being returned or changed?" /></label>
-            <button className="primary-button span-2" onClick={finishAdjustment}><RotateCcw size={17} /> Apply stock</button>
+            <label className="span-2">Plant item<select value={draft.plant_id} onChange={(event) => setDraft({ ...draft, plant_id: event.target.value })}><option value="">Choose an item</option>{plants.map((plant) => <option value={plant.id} key={plant.id}>{plant.plant_name} — {plant.plant_code} — available {plant.quantity}</option>)}</select></label>
+            {processTab === 'return' && <label className="span-2">Customer (optional)<select value={draft.customer_id} onChange={(event) => setDraft({ ...draft, customer_id: event.target.value })}><option value="">Walk-in / no customer</option>{customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.cus_name} — {customer.cus_ph}</option>)}</select></label>}
+            <label>Quantity<input type="number" min="1" max={processTab === 'damage' ? selectedPlant?.quantity || 1 : undefined} value={draft.quantity} onChange={(event) => setDraft({ ...draft, quantity: event.target.value })} /><small>{processTab === 'damage' && selectedPlant ? `Maximum available: ${selectedPlant.quantity}` : 'Enter the number of plants'}</small></label>
+            {processTab === 'return' ? (
+              <>
+                <label>Plant condition<select value={draft.return_condition} onChange={(event) => setDraft({ ...draft, return_condition: event.target.value })}><option>Good — return to available stock</option><option>Damaged — move to damaged stock</option><option>Dead/unusable — write off</option></select></label>
+                <label>Refund<select value={draft.refund_type} onChange={(event) => setDraft({ ...draft, refund_type: event.target.value })}><option>No refund</option><option>Full refund</option><option>Partial refund</option></select></label>
+                {draft.refund_type !== 'No refund' && <label>Refund amount<input type="number" min="0" value={draft.amount} onChange={(event) => setDraft({ ...draft, amount: event.target.value })} /></label>}
+              </>
+            ) : (
+              <>
+                <label>Cause<select value={draft.damage_cause} onChange={(event) => setDraft({ ...draft, damage_cause: event.target.value })}><option>Shop damage</option><option>Delivery damage</option><option>Disease or pests</option><option>Dead plant</option><option>Supplier damage</option><option>Other</option></select></label>
+                <label className="span-2">Result<select value={draft.damage_result} onChange={(event) => setDraft({ ...draft, damage_result: event.target.value })}><option>Keep for recovery</option><option>Move to damaged stock</option><option>Write off</option><option>Return to supplier</option></select></label>
+              </>
+            )}
+            <label className="span-2">Reason / notes<textarea value={draft.reason} onChange={(event) => setDraft({ ...draft, reason: event.target.value })} placeholder={processTab === 'return' ? 'Why was the plant returned?' : 'What happened to the plant?'} /></label>
+            <div className="quick-reasons span-2">
+              {(processTab === 'return' ? ['Changed mind', 'Wrong item', 'Plant condition', 'Delivery issue'] : ['Broken pot', 'Wilted', 'Pest damage', 'Transport damage']).map((reason) => <button key={reason} type="button" onClick={() => setDraft({ ...draft, reason })}>{reason}</button>)}
+            </div>
           </div>
-        </section>
+          <aside className="stock-preview" aria-label="Stock change preview">
+            <div><span>Stock result</span><strong>{selectedPlant?.plant_name || 'Choose a plant'}</strong></div>
+            <StockPreviewRow label="Available stock" current={Number(selectedPlant?.quantity || 0)} delta={stockEffect.available} />
+            <StockPreviewRow label="Damaged stock" current={Number(selectedPlant?.damaged_quantity || 0)} delta={stockEffect.damaged} />
+            <StockPreviewRow label="Written off" current={Number(selectedPlant?.written_off_quantity || 0)} delta={stockEffect.writtenOff} />
+            {stockEffect.supplierReturn > 0 && <div className="stock-preview-row supplier"><span>Return to supplier</span><strong>{stockEffect.supplierReturn}</strong></div>}
+            <button className="primary-button wide" disabled={!selectedPlant || !processQuantity || !draft.reason.trim()} onClick={applyProcess}>{processTab === 'return' ? 'Complete Return' : 'Record Damage'}</button>
+          </aside>
+        </div>
+      </section>
 
-        <section className="panel reveal">
-          <div className="panel-title-row"><div><h2>Completed Processes</h2><p>A clear history of returns, damage, exchanges, and refunds.</p></div></div>
-          <div className="adjustment-list">
-            {adjustments.map((item) => (
-              <article className="adjustment-card" key={item.id}>
-                <div><span className="status-pill completed">Applied</span><strong>{item.type} · {item.plant_name || item.plant_code}</strong><small>{item.customer_name || 'Walk-in / no customer'} · {item.date}</small><p>{item.reason}</p><small>{item.quantity} unit(s) · {item.stock_action} · {money(item.amount)}</small></div>
-                <button className="icon-button danger" onClick={() => setAdjustments((current) => current.filter((entry) => entry.id !== item.id))} aria-label="Delete process record"><Trash2 size={16} /></button>
-              </article>
-            ))}
-            {!adjustments.length && <div className="empty-state">No completed return or damage processes yet.</div>}
-          </div>
-        </section>
-      </div>
+      <section className="panel reveal process-history">
+        <div className="panel-title-row"><div><h2>Process History</h2><p>Completed returns and damage records are kept for stock auditing.</p></div></div>
+        <div className="adjustment-list">
+          {adjustments.map((item) => (
+            <article className="adjustment-card" key={item.id}>
+              <div><span className="status-pill completed">Completed</span><strong>{item.type} · {item.plant_name || item.plant_code}</strong><small>{item.customer_name || 'Inventory'} · {item.date}</small><p>{item.reason}</p><small>{item.quantity} unit(s) · {item.outcome || item.stock_action || 'Stock recorded'}{Number(item.amount || 0) > 0 ? ` · ${money(item.amount)}` : ''}</small></div>
+            </article>
+          ))}
+          {!adjustments.length && <div className="empty-state">No return or damage records yet.</div>}
+        </div>
+      </section>
 
       <InvoicesPage invoices={invoices} setInvoices={setInvoices} plants={plants} setPlants={setPlants} customers={customers} isFormOpen={isFormOpen} setIsFormOpen={setIsFormOpen} isListOpen={false} setIsListOpen={() => {}} nextInvoiceNo={nextInvoiceNo} showWorkspace={false} />
     </section>
+  );
+}
+
+function StockPreviewRow({ label, current, delta }) {
+  const next = Math.max(0, current + delta);
+  return (
+    <div className="stock-preview-row">
+      <span>{label}</span>
+      <strong>{current}</strong>
+      <i className={delta > 0 ? 'positive' : delta < 0 ? 'negative' : ''}>{delta > 0 ? `+${delta}` : delta}</i>
+      <b>{next}</b>
+    </div>
   );
 }
 
@@ -888,8 +984,8 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
                 <div className="invoice-edit-row" key={`draft-item-${index}`}>
                   <label>Plant<select value={item.plant_id || ''} onChange={(event) => selectPlant(index, event.target.value)}><option value="">Choose stock plant</option>{plants.map((plant) => <option value={plant.id} key={plant.id}>{plant.plant_name} - {plant.plant_code}</option>)}</select></label>
                   <label>Qty<input type="number" value={item.quantity} onChange={(event) => updateDraftItem(index, { quantity: Number(event.target.value) })} /></label>
-                  <label>Unit<input type="number" value={item.unit_price} onChange={(event) => updateDraftItem(index, { unit_price: Number(event.target.value) })} /></label>
-                  <label>WS<input type="number" value={item.ws_price} onChange={(event) => updateDraftItem(index, { ws_price: Number(event.target.value) })} /></label>
+                  <label>Selling price<input type="number" value={item.unit_price} onChange={(event) => updateDraftItem(index, { unit_price: Number(event.target.value) })} /></label>
+                  <label>Original cost<input type="number" value={item.ws_price} onChange={(event) => updateDraftItem(index, { ws_price: Number(event.target.value) })} /></label>
                   <button className="icon-button danger" onClick={() => setDraft((current) => ({ ...current, items: current.items.filter((_, itemIndex) => itemIndex !== index) }))} aria-label="Remove invoice item"><Trash2 size={16} /></button>
                 </div>
               ))}
@@ -1014,7 +1110,7 @@ function StockPage({ plants, setPlants, adjustments = [], isFormOpen, setIsFormO
   }), { units: 0, value: 0, lowStock: 0 }), [plants]);
   const outOfStockPlants = plants.filter((plant) => Number(plant.quantity || 0) === 0);
   const lowStockPlants = plants.filter((plant) => Number(plant.quantity || 0) > 0 && Number(plant.quantity || 0) <= Number(plant.low_stock_limit || 0));
-  const damagedRecords = adjustments.filter((item) => item.type === 'Damaged plant return');
+  const damagedRecords = adjustments.filter((item) => item.process_group === 'damage' || item.type === 'Damaged plant return' || item.type === 'Plant damage');
   const filteredPlants = useMemo(() => plants.filter((plant) => {
     const minPrice = filters.minPrice === '' ? null : Number(filters.minPrice);
     const maxPrice = filters.maxPrice === '' ? null : Number(filters.maxPrice);
@@ -1096,13 +1192,12 @@ function StockPage({ plants, setPlants, adjustments = [], isFormOpen, setIsFormO
                 </div>
                 <dl className="stock-card-metrics">
                   <div><dt>Qty</dt><dd>{plant.quantity}</dd></div>
-                  <div><dt>Sell Price</dt><dd>{money(plant.unit_price)}</dd></div>
-                  <div><dt>WS Price</dt><dd>{money(plant.ws_price)}</dd></div>
+                  <div><dt>Original Cost</dt><dd>{money(plant.ws_price)}</dd></div>
+                  <div><dt>Selling Price</dt><dd>{money(plant.unit_price)}</dd></div>
                 </dl>
               </div>
               <div className="stock-card-side">
-                <span>{Number(plant.quantity) === 0 ? 'Out of stock' : plant.quantity <= plant.low_stock_limit ? 'Low stock' : 'In stock'}</span>
-                <strong>{money(plant.unit_price)}</strong>
+                <span className={Number(plant.quantity) === 0 ? 'status-out' : plant.quantity <= plant.low_stock_limit ? 'status-low' : 'status-in'}>{Number(plant.quantity) === 0 ? 'Out of stock' : plant.quantity <= plant.low_stock_limit ? 'Low stock' : 'In stock'}</span>
                 <div className="stock-card-actions">
                   <button className="ghost-button" onClick={() => editPlant(plant)}><Edit3 size={16} /> Edit</button>
                   <button className="ghost-button danger" onClick={() => setPlants((current) => current.filter((item) => item.id !== plant.id))}><Trash2 size={16} /> Delete</button>
@@ -1135,7 +1230,7 @@ function StockPage({ plants, setPlants, adjustments = [], isFormOpen, setIsFormO
             <article key={item.id}>
               <TriangleAlert size={18} />
               <div><strong>{item.plant_name}</strong><span>{item.plant_code} · {item.quantity} unit(s) · {item.date}</span><p>{item.reason}</p></div>
-              <b>{item.stock_action}</b>
+              <b>{item.outcome || item.stock_action || 'Recorded'}</b>
             </article>
           ))}
           {!damagedRecords.length && <div className="empty-state">No damaged plants have been recorded.</div>}
@@ -1158,8 +1253,8 @@ function StockPage({ plants, setPlants, adjustments = [], isFormOpen, setIsFormO
               <label>Type<select value={draft.plant_type} onChange={(event) => setDraft({ ...draft, plant_type: event.target.value })}>{plantTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
               <label>Size<input value={draft.size} onChange={(event) => setDraft({ ...draft, size: event.target.value })} /></label>
               <label>Quantity<input type="number" value={draft.quantity} onChange={(event) => setDraft({ ...draft, quantity: Number(event.target.value) })} /></label>
-              <label>Unit price<input type="number" value={draft.unit_price} onChange={(event) => setDraft({ ...draft, unit_price: Number(event.target.value) })} /></label>
-              <label>WS price<input type="number" value={draft.ws_price} onChange={(event) => setDraft({ ...draft, ws_price: Number(event.target.value) })} /></label>
+              <label>Selling price<input type="number" value={draft.unit_price} onChange={(event) => setDraft({ ...draft, unit_price: Number(event.target.value) })} /></label>
+              <label>Original cost<input type="number" value={draft.ws_price} onChange={(event) => setDraft({ ...draft, ws_price: Number(event.target.value) })} /></label>
               <label>Low stock limit<input type="number" value={draft.low_stock_limit} onChange={(event) => setDraft({ ...draft, low_stock_limit: Number(event.target.value) })} /></label>
               <label className="span-2 image-upload-field">
                 Plant image
@@ -1416,8 +1511,8 @@ function DataTable({ rows }) {
     ['plant_type', 'Type'],
     ['size', 'Size'],
     ['quantity', 'Qty'],
-    ['unit_price', 'Unit price'],
-    ['ws_price', 'WS price'],
+    ['unit_price', 'Selling price'],
+    ['ws_price', 'Original cost'],
     ['customer_name', 'Customer'],
     ['customer_phone', 'Phone'],
     ['customer_address', 'Address'],
