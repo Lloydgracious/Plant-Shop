@@ -5,11 +5,14 @@ import {
   Banknote,
   Bell,
   CalendarDays,
+  CheckCircle2,
+  ClipboardList,
   Download,
   Edit3,
   FileSpreadsheet,
   FileOutput,
   Leaf,
+  LogOut,
   Menu,
   Megaphone,
   Package,
@@ -21,6 +24,7 @@ import {
   Search,
   Send,
   Settings,
+  ShieldCheck,
   Sprout,
   Store,
   Trash2,
@@ -185,16 +189,26 @@ const sampleInvoices = [
   },
 ];
 
+const defaultUsers = [
+  { id: 'admin', name: 'Shop Admin', username: 'admin', password: 'admin123', role: 'admin', can_view_reports: true, active: true },
+  { id: 'staff', name: 'Sales Staff', username: 'staff', password: 'staff123', role: 'staff', can_view_reports: false, active: true },
+];
+
+const sampleTasks = [
+  { id: 1, title: 'Check low-stock plants', details: 'Review the low-stock list and prepare a restock note.', assigned_to: 'staff', due_date: '2026-07-25', status: 'To do', created_at: '2026-07-24' },
+];
+
 const navItems = [
   { id: 'pos', label: 'Dashboard', icon: BarChart3, group: 'Selling' },
   { id: 'sales', label: 'Sales', icon: BadgeDollarSign, group: 'Selling' },
   { id: 'invoices', label: 'Invoices', icon: ReceiptText, group: 'Selling' },
   { id: 'stock', label: 'Plant Stock', icon: Leaf, group: 'Selling' },
   { id: 'customers', label: 'Customers', icon: Users, group: 'Selling' },
+  { id: 'tasks', label: 'Tasks', icon: ClipboardList, group: 'Selling' },
   { id: 'daily', label: 'Daily Data', icon: CalendarDays, group: 'Reports' },
   { id: 'monthly', label: 'Monthly Data', icon: BarChart3, group: 'Reports' },
   { id: 'export', label: 'Export Center', icon: FileOutput, group: 'Reports' },
-  { id: 'settings', label: 'Settings', icon: Settings, group: 'Reports' },
+  { id: 'settings', label: 'Settings', icon: Settings, group: 'System' },
 ];
 
 const money = (value) => `${Number(value || 0).toLocaleString()} Ks`;
@@ -220,6 +234,41 @@ function usePersistentState(key, initialValue) {
   return [state, setState];
 }
 
+function LoginPage({ users, onLogin }) {
+  const [credentials, setCredentials] = useState({ username: '', password: '' });
+  const [error, setError] = useState('');
+
+  const login = () => {
+    const user = users.find((item) => (
+      item.active
+      && clean(item.username) === clean(credentials.username)
+      && item.password === credentials.password
+    ));
+    if (!user) {
+      setError('Username or password is incorrect, or this account is inactive.');
+      return;
+    }
+    setError('');
+    onLogin(String(user.id));
+  };
+
+  return (
+    <main className="login-page">
+      <section className="login-card">
+        <div className="login-brand"><span className="brand-mark"><Sprout size={26} /></span><div><strong>Plant Zone POS</strong><small>Garden Center · Pyay</small></div></div>
+        <div className="login-copy"><span className="eyebrow">Secure workspace</span><h1>Welcome back</h1><p>Sign in to manage sales, stock, customers, reports, and assigned tasks.</p></div>
+        <div className="login-form">
+          <label>Username<input autoComplete="username" value={credentials.username} onChange={(event) => setCredentials({ ...credentials, username: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
+          <label>Password<input type="password" autoComplete="current-password" value={credentials.password} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
+          {error && <p className="login-error" role="alert">{error}</p>}
+          <button className="primary-button wide" onClick={login}><ShieldCheck size={18} /> Sign in</button>
+        </div>
+        <div className="demo-access"><strong>First-time access</strong><span>Admin: <b>admin</b> / <b>admin123</b></span><span>Staff: <b>staff</b> / <b>staff123</b></span></div>
+      </section>
+    </main>
+  );
+}
+
 function App() {
   const [activePage, setActivePage] = useState('pos');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -231,8 +280,23 @@ function App() {
   const [customers, setCustomers] = usePersistentState('plant-zone-customers', sampleCustomers);
   const [invoices, setInvoices] = usePersistentState('plant-zone-invoices', sampleInvoices);
   const [saleAdjustments, setSaleAdjustments] = usePersistentState('plant-zone-sale-adjustments', []);
+  const [users, setUsers] = usePersistentState('plant-zone-users', defaultUsers);
+  const [tasks, setTasks] = usePersistentState('plant-zone-tasks', sampleTasks);
+  const [sessionUserId, setSessionUserId] = useState(() => sessionStorage.getItem('plant-zone-session-user') || '');
+  const currentUser = users.find((user) => String(user.id) === String(sessionUserId) && user.active);
+  const canViewReports = Boolean(currentUser && (currentUser.role === 'admin' || currentUser.can_view_reports));
+  const visibleNavItems = navItems.filter((item) => item.group !== 'Reports' || canViewReports);
 
   const rows = useMemo(() => flattenInvoiceRows(invoices), [invoices]);
+
+  useEffect(() => {
+    if (sessionUserId) sessionStorage.setItem('plant-zone-session-user', sessionUserId);
+    else sessionStorage.removeItem('plant-zone-session-user');
+  }, [sessionUserId]);
+
+  useEffect(() => {
+    if (!canViewReports && ['daily', 'monthly', 'export'].includes(activePage)) setActivePage('pos');
+  }, [activePage, canViewReports]);
 
   const nextInvoiceNo = useMemo(() => {
     const dateKey = today().replaceAll('-', '');
@@ -242,6 +306,8 @@ function App() {
 
   const todayRows = useMemo(() => rows.filter((row) => row.date === today()), [rows]);
   const monthlyRows = useMemo(() => rows.filter((row) => row.date.startsWith(monthNow())), [rows]);
+
+  if (!currentUser) return <LoginPage users={users} onLogin={setSessionUserId} />;
 
   return (
     <div className="app-shell">
@@ -254,10 +320,10 @@ function App() {
           </div>
         </div>
         <nav className="nav-list" aria-label="Main navigation">
-          {['Selling', 'Reports'].map((group) => (
-            <React.Fragment key={group}>
+          {['Selling', 'Reports', 'System'].map((group) => (
+            visibleNavItems.some((item) => item.group === group) && <React.Fragment key={group}>
               <div className="nav-label">{group}</div>
-              {navItems.filter((item) => item.group === group).map((item) => {
+              {visibleNavItems.filter((item) => item.group === group).map((item) => {
                 const Icon = item.icon;
                 return (
                   <button
@@ -281,7 +347,7 @@ function App() {
       <div className="mobile-backdrop" hidden={!sidebarOpen} onClick={() => setSidebarOpen(false)} />
 
       <main className="main-content">
-        <Header activePage={activePage} onMenu={() => setSidebarOpen(true)} onAddInvoice={() => setInvoiceModalOpen(true)} onShowInvoices={() => setInvoiceListOpen(true)} onAddPlant={() => setStockModalOpen(true)} onAddCustomer={() => setCustomerModalOpen(true)} />
+        <Header activePage={activePage} currentUser={currentUser} onMenu={() => setSidebarOpen(true)} onAddInvoice={() => setInvoiceModalOpen(true)} onShowInvoices={() => setInvoiceListOpen(true)} onAddPlant={() => setStockModalOpen(true)} onAddCustomer={() => setCustomerModalOpen(true)} />
         {activePage === 'pos' && (
           <DashboardPage
             plants={plants}
@@ -315,16 +381,17 @@ function App() {
             setIsFormOpen={setCustomerModalOpen}
           />
         )}
+        {activePage === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} users={users} currentUser={currentUser} />}
         {activePage === 'daily' && <DailyDataPage rows={rows} />}
         {activePage === 'monthly' && <MonthlyDataPage rows={rows} invoices={invoices} />}
         {activePage === 'export' && <ExportCenterPage rows={rows} invoices={invoices} />}
-        {activePage === 'settings' && <SettingsPage />}
+        {activePage === 'settings' && <SettingsPage users={users} setUsers={setUsers} currentUser={currentUser} onLogout={() => { setSessionUserId(''); setActivePage('pos'); }} />}
       </main>
     </div>
   );
 }
 
-function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, onAddCustomer }) {
+function Header({ activePage, currentUser, onMenu, onAddInvoice, onShowInvoices, onAddPlant, onAddCustomer }) {
   const page = navItems.find((item) => item.id === activePage);
   const heroPlant = heroPlantImages[activePage] || heroPlantImages.pos;
   const isSalesPage = activePage === 'sales';
@@ -342,6 +409,7 @@ function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, 
         </label>
         <button className="soft-button"><Store size={17} /> Plant Zone Main</button>
         <button className="soft-button"><CalendarDays size={17} /> 08 Jul 2026</button>
+        <button className="soft-button user-chip"><User size={17} /> {currentUser.name}</button>
         <button className="icon-button" aria-label="Notifications"><Bell size={18} /></button>
       </header>
       <section className={`hero hero-${activePage}`}>
@@ -1582,23 +1650,112 @@ function ExportCenterPage({ rows, invoices }) {
   );
 }
 
-function SettingsPage() {
+function TasksPage({ tasks, setTasks, users, currentUser }) {
+  const activeStaff = users.filter((user) => user.active && user.role !== 'admin');
+  const [draft, setDraft] = useState({ title: '', details: '', assigned_to: activeStaff[0]?.id || '', due_date: today() });
+  const visibleTasks = currentUser.role === 'admin' ? tasks : tasks.filter((task) => String(task.assigned_to) === String(currentUser.id));
+  const taskCounts = ['To do', 'In progress', 'Done'].map((status) => ({ status, count: visibleTasks.filter((task) => task.status === status).length }));
+
+  const addTask = () => {
+    if (!draft.title.trim() || !draft.assigned_to) return;
+    setTasks((current) => [{ ...draft, id: Date.now(), status: 'To do', created_at: today(), created_by: currentUser.id }, ...current]);
+    setDraft((current) => ({ ...current, title: '', details: '' }));
+  };
+
   return (
-    <section className="panel reveal settings-page">
-      <div className="panel-title-row">
-        <div className="panel-title">
-          <Settings size={20} />
-          <div><h2>Settings</h2><p>Plant Zone business defaults for future database and permission setup.</p></div>
+    <section className="task-page">
+      <div className="task-summary">
+        {taskCounts.map((item) => <div key={item.status}><span>{item.status}</span><strong>{item.count}</strong></div>)}
+      </div>
+      {currentUser.role === 'admin' && (
+        <section className="panel reveal task-assignment">
+          <div className="panel-title-row"><div><h2>Assign a Task</h2><p>Create work for an active staff account.</p></div></div>
+          <div className="form-grid">
+            <label>Task title<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Example: Restock Monstera shelf" /></label>
+            <label>Assign to<select value={draft.assigned_to} onChange={(event) => setDraft({ ...draft, assigned_to: event.target.value })}><option value="">Choose staff</option>{activeStaff.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select></label>
+            <label>Due date<input type="date" value={draft.due_date} onChange={(event) => setDraft({ ...draft, due_date: event.target.value })} /></label>
+            <label className="span-2">Details<textarea value={draft.details} onChange={(event) => setDraft({ ...draft, details: event.target.value })} placeholder="Add clear instructions for the staff member" /></label>
+            <button className="primary-button" onClick={addTask}><Plus size={17} /> Assign task</button>
+          </div>
+        </section>
+      )}
+      <section className="panel reveal">
+        <div className="panel-title-row"><div><h2>{currentUser.role === 'admin' ? 'Team Tasks' : 'My Tasks'}</h2><p>Track work from assignment to completion.</p></div></div>
+        <div className="task-board">
+          {visibleTasks.map((task) => {
+            const assignee = users.find((user) => String(user.id) === String(task.assigned_to));
+            return (
+              <article className={`task-card status-${clean(task.status).replaceAll(' ', '-')}`} key={task.id}>
+                <div className="task-card-top"><span>{task.status}</span><small>Due {task.due_date}</small></div>
+                <h3>{task.title}</h3>
+                <p>{task.details || 'No additional instructions.'}</p>
+                <div className="task-card-footer"><span><User size={14} /> {assignee?.name || 'Unassigned'}</span><select aria-label={`Status for ${task.title}`} value={task.status} onChange={(event) => setTasks((current) => current.map((item) => item.id === task.id ? { ...item, status: event.target.value, updated_at: today() } : item))}><option>To do</option><option>In progress</option><option>Done</option></select>{currentUser.role === 'admin' && <button className="icon-button danger" onClick={() => setTasks((current) => current.filter((item) => item.id !== task.id))} aria-label="Delete task"><Trash2 size={16} /></button>}</div>
+              </article>
+            );
+          })}
+          {!visibleTasks.length && <div className="empty-state">No tasks assigned yet.</div>}
         </div>
-      </div>
-      <div className="settings-grid">
-        <label>Business name<input value="Plant Zone" readOnly /></label>
-        <label>Business type<input value="Garden Center" readOnly /></label>
-        <label>Location<input value="Pyay, Bago Region, Myanmar" readOnly /></label>
-        <label>Phone<input value="+95 9 756 040646" readOnly /></label>
-        <label>Default payment method<input value="Cash" readOnly /></label>
-        <label>Monthly report permission<input value="Separate navigation page" readOnly /></label>
-      </div>
+      </section>
+    </section>
+  );
+}
+
+function SettingsPage({ users, setUsers, currentUser, onLogout }) {
+  const [userDraft, setUserDraft] = useState({ name: '', username: '', password: '', role: 'staff', can_view_reports: false });
+  const addUser = () => {
+    if (!userDraft.name.trim() || !userDraft.username.trim() || !userDraft.password || users.some((user) => clean(user.username) === clean(userDraft.username))) return;
+    setUsers((current) => [...current, { ...userDraft, id: Date.now(), active: true }]);
+    setUserDraft({ name: '', username: '', password: '', role: 'staff', can_view_reports: false });
+  };
+
+  return (
+    <section className="settings-page">
+      <section className="panel reveal account-settings">
+        <div className="panel-title-row"><div className="panel-title"><ShieldCheck size={20} /><div><h2>Signed-in Account</h2><p>Manage the current session on this device.</p></div></div></div>
+        <div className="current-account">
+          <div className="avatar">{currentUser.name.slice(0, 1).toUpperCase()}</div>
+          <div><strong>{currentUser.name}</strong><span>@{currentUser.username} · {currentUser.role === 'admin' ? 'Administrator' : 'Staff'}</span></div>
+          <button className="ghost-button danger" onClick={onLogout}><LogOut size={17} /> Log out</button>
+        </div>
+      </section>
+
+      {currentUser.role === 'admin' && (
+        <>
+          <section className="panel reveal">
+            <div className="panel-title-row"><div className="panel-title"><Users size={20} /><div><h2>User Management</h2><p>Create accounts, control report visibility, and disable access.</p></div></div></div>
+            <div className="user-create-form">
+              <label>Name<input value={userDraft.name} onChange={(event) => setUserDraft({ ...userDraft, name: event.target.value })} /></label>
+              <label>Username<input value={userDraft.username} onChange={(event) => setUserDraft({ ...userDraft, username: event.target.value })} /></label>
+              <label>Temporary password<input type="password" value={userDraft.password} onChange={(event) => setUserDraft({ ...userDraft, password: event.target.value })} /></label>
+              <label>Role<select value={userDraft.role} onChange={(event) => setUserDraft({ ...userDraft, role: event.target.value, can_view_reports: event.target.value === 'admin' })}><option value="staff">Staff</option><option value="admin">Admin</option></select></label>
+              <button className="primary-button" onClick={addUser}><Plus size={17} /> Add user</button>
+            </div>
+            <div className="user-management-list">
+              {users.map((user) => (
+                <article key={user.id}>
+                  <div className="avatar">{user.name.slice(0, 1).toUpperCase()}</div>
+                  <div className="user-identity"><strong>{user.name}</strong><span>@{user.username} · {user.role}</span></div>
+                  <label className="permission-toggle"><input type="checkbox" checked={user.role === 'admin' || Boolean(user.can_view_reports)} disabled={user.role === 'admin'} onChange={(event) => setUsers((current) => current.map((item) => item.id === user.id ? { ...item, can_view_reports: event.target.checked } : item))} /><span>Reports</span></label>
+                  <label className="permission-toggle"><input type="checkbox" checked={Boolean(user.active)} disabled={String(user.id) === String(currentUser.id)} onChange={(event) => setUsers((current) => current.map((item) => item.id === user.id ? { ...item, active: event.target.checked } : item))} /><span>Active</span></label>
+                  {String(user.id) !== String(currentUser.id) && <button className="icon-button danger" onClick={() => setUsers((current) => current.filter((item) => item.id !== user.id))} aria-label={`Delete ${user.name}`}><Trash2 size={16} /></button>}
+                </article>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+
+      <section className="panel reveal">
+        <div className="panel-title-row"><div className="panel-title"><Settings size={20} /><div><h2>Business Defaults</h2><p>Plant Zone store information used across the app.</p></div></div></div>
+        <div className="settings-grid">
+          <label>Business name<input value="Plant Zone" readOnly /></label>
+          <label>Business type<input value="Garden Center" readOnly /></label>
+          <label>Location<input value="Pyay, Bago Region, Myanmar" readOnly /></label>
+          <label>Phone<input value="+95 9 756 040646" readOnly /></label>
+          <label>Default payment method<input value="Cash" readOnly /></label>
+          <label>Data storage<input value="This browser / device" readOnly /></label>
+        </div>
+      </section>
     </section>
   );
 }
