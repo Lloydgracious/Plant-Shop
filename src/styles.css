@@ -3157,9 +3157,7 @@ td {
 }
 
 .login-form,
-.task-page,
 .settings-page,
-.task-board,
 .user-management-list {
   display: grid;
   gap: 13px;
@@ -3196,116 +3194,8 @@ td {
   white-space: nowrap;
 }
 
-.task-page,
 .settings-page {
   gap: 20px;
-}
-
-.task-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.task-summary div {
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: var(--small-shadow);
-}
-
-.task-summary span,
-.task-summary strong {
-  display: block;
-}
-
-.task-summary span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.task-summary strong {
-  margin-top: 6px;
-  color: var(--forest-dark);
-  font-size: 1.8rem;
-}
-
-.task-assignment textarea {
-  min-height: 82px;
-  resize: vertical;
-}
-
-.task-board {
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
-}
-
-.task-card {
-  display: grid;
-  gap: 11px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-left: 4px solid #c79c27;
-  border-radius: 13px;
-  background: #fff;
-}
-
-.task-card.status-in-progress {
-  border-left-color: #3f7bb1;
-}
-
-.task-card.status-done {
-  border-left-color: var(--forest);
-  background: #f7fbf5;
-}
-
-.task-card-top,
-.task-card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.task-card-top span {
-  color: var(--olive);
-  font-size: 11px;
-  font-weight: 950;
-  text-transform: uppercase;
-}
-
-.task-card-top small,
-.task-card p {
-  color: var(--muted);
-}
-
-.task-card h3,
-.task-card p {
-  margin: 0;
-}
-
-.task-card-footer {
-  padding-top: 10px;
-  border-top: 1px solid var(--soft-line);
-}
-
-.task-card-footer > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.task-card-footer select {
-  width: auto;
-  min-height: 34px;
-  padding: 0 8px;
-  font-size: 12px;
 }
 
 .current-account {
@@ -3527,7 +3417,6 @@ td {
 }
 
 @media (max-width: 720px) {
-  .task-summary,
   .user-create-form {
     grid-template-columns: 1fr;
   }

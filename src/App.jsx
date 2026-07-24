@@ -6,7 +6,6 @@ import {
   Bell,
   CalendarDays,
   CheckCircle2,
-  ClipboardList,
   Download,
   Edit3,
   FileSpreadsheet,
@@ -194,17 +193,12 @@ const defaultUsers = [
   { id: 'staff', name: 'Sales Staff', username: 'staff', password: 'staff123', role: 'staff', can_view_reports: false, active: true },
 ];
 
-const sampleTasks = [
-  { id: 1, title: 'Check low-stock plants', details: 'Review the low-stock list and prepare a restock note.', assigned_to: 'staff', due_date: '2026-07-25', status: 'To do', created_at: '2026-07-24' },
-];
-
 const navItems = [
   { id: 'pos', label: 'Dashboard', icon: BarChart3, group: 'Selling' },
   { id: 'sales', label: 'Sales', icon: BadgeDollarSign, group: 'Selling' },
   { id: 'invoices', label: 'Invoices', icon: ReceiptText, group: 'Selling' },
   { id: 'stock', label: 'Plant Stock', icon: Leaf, group: 'Selling' },
   { id: 'customers', label: 'Customers', icon: Users, group: 'Selling' },
-  { id: 'tasks', label: 'Tasks', icon: ClipboardList, group: 'Selling' },
   { id: 'daily', label: 'Daily Data', icon: CalendarDays, group: 'Reports' },
   { id: 'monthly', label: 'Monthly Data', icon: BarChart3, group: 'Reports' },
   { id: 'export', label: 'Export Center', icon: FileOutput, group: 'Reports' },
@@ -256,7 +250,7 @@ function LoginPage({ users, onLogin }) {
     <main className="login-page">
       <section className="login-card">
         <div className="login-brand"><span className="brand-mark"><Sprout size={26} /></span><div><strong>Plant Zone POS</strong><small>Garden Center · Pyay</small></div></div>
-        <div className="login-copy"><span className="eyebrow">Secure workspace</span><h1>Welcome back</h1><p>Sign in to manage sales, stock, customers, reports, and assigned tasks.</p></div>
+        <div className="login-copy"><span className="eyebrow">Secure workspace</span><h1>Welcome back</h1><p>Sign in to manage sales, stock, customers, invoices, and reports.</p></div>
         <div className="login-form">
           <label>Username<input autoComplete="username" value={credentials.username} onChange={(event) => setCredentials({ ...credentials, username: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
           <label>Password<input type="password" autoComplete="current-password" value={credentials.password} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
@@ -281,7 +275,6 @@ function App() {
   const [invoices, setInvoices] = usePersistentState('plant-zone-invoices', sampleInvoices);
   const [saleAdjustments, setSaleAdjustments] = usePersistentState('plant-zone-sale-adjustments', []);
   const [users, setUsers] = usePersistentState('plant-zone-users', defaultUsers);
-  const [tasks, setTasks] = usePersistentState('plant-zone-tasks', sampleTasks);
   const [sessionUserId, setSessionUserId] = useState(() => sessionStorage.getItem('plant-zone-session-user') || '');
   const currentUser = users.find((user) => String(user.id) === String(sessionUserId) && user.active);
   const canViewReports = Boolean(currentUser && (currentUser.role === 'admin' || currentUser.can_view_reports));
@@ -381,7 +374,6 @@ function App() {
             setIsFormOpen={setCustomerModalOpen}
           />
         )}
-        {activePage === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} users={users} currentUser={currentUser} />}
         {activePage === 'daily' && <DailyDataPage rows={rows} />}
         {activePage === 'monthly' && <MonthlyDataPage rows={rows} invoices={invoices} />}
         {activePage === 'export' && <ExportCenterPage rows={rows} invoices={invoices} />}
@@ -1646,56 +1638,6 @@ function ExportCenterPage({ rows, invoices }) {
           <span>{invoices.length} invoice records</span>
         </button>
       </div>
-    </section>
-  );
-}
-
-function TasksPage({ tasks, setTasks, users, currentUser }) {
-  const activeStaff = users.filter((user) => user.active && user.role !== 'admin');
-  const [draft, setDraft] = useState({ title: '', details: '', assigned_to: activeStaff[0]?.id || '', due_date: today() });
-  const visibleTasks = currentUser.role === 'admin' ? tasks : tasks.filter((task) => String(task.assigned_to) === String(currentUser.id));
-  const taskCounts = ['To do', 'In progress', 'Done'].map((status) => ({ status, count: visibleTasks.filter((task) => task.status === status).length }));
-
-  const addTask = () => {
-    if (!draft.title.trim() || !draft.assigned_to) return;
-    setTasks((current) => [{ ...draft, id: Date.now(), status: 'To do', created_at: today(), created_by: currentUser.id }, ...current]);
-    setDraft((current) => ({ ...current, title: '', details: '' }));
-  };
-
-  return (
-    <section className="task-page">
-      <div className="task-summary">
-        {taskCounts.map((item) => <div key={item.status}><span>{item.status}</span><strong>{item.count}</strong></div>)}
-      </div>
-      {currentUser.role === 'admin' && (
-        <section className="panel reveal task-assignment">
-          <div className="panel-title-row"><div><h2>Assign a Task</h2><p>Create work for an active staff account.</p></div></div>
-          <div className="form-grid">
-            <label>Task title<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Example: Restock Monstera shelf" /></label>
-            <label>Assign to<select value={draft.assigned_to} onChange={(event) => setDraft({ ...draft, assigned_to: event.target.value })}><option value="">Choose staff</option>{activeStaff.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select></label>
-            <label>Due date<input type="date" value={draft.due_date} onChange={(event) => setDraft({ ...draft, due_date: event.target.value })} /></label>
-            <label className="span-2">Details<textarea value={draft.details} onChange={(event) => setDraft({ ...draft, details: event.target.value })} placeholder="Add clear instructions for the staff member" /></label>
-            <button className="primary-button" onClick={addTask}><Plus size={17} /> Assign task</button>
-          </div>
-        </section>
-      )}
-      <section className="panel reveal">
-        <div className="panel-title-row"><div><h2>{currentUser.role === 'admin' ? 'Team Tasks' : 'My Tasks'}</h2><p>Track work from assignment to completion.</p></div></div>
-        <div className="task-board">
-          {visibleTasks.map((task) => {
-            const assignee = users.find((user) => String(user.id) === String(task.assigned_to));
-            return (
-              <article className={`task-card status-${clean(task.status).replaceAll(' ', '-')}`} key={task.id}>
-                <div className="task-card-top"><span>{task.status}</span><small>Due {task.due_date}</small></div>
-                <h3>{task.title}</h3>
-                <p>{task.details || 'No additional instructions.'}</p>
-                <div className="task-card-footer"><span><User size={14} /> {assignee?.name || 'Unassigned'}</span><select aria-label={`Status for ${task.title}`} value={task.status} onChange={(event) => setTasks((current) => current.map((item) => item.id === task.id ? { ...item, status: event.target.value, updated_at: today() } : item))}><option>To do</option><option>In progress</option><option>Done</option></select>{currentUser.role === 'admin' && <button className="icon-button danger" onClick={() => setTasks((current) => current.filter((item) => item.id !== task.id))} aria-label="Delete task"><Trash2 size={16} /></button>}</div>
-              </article>
-            );
-          })}
-          {!visibleTasks.length && <div className="empty-state">No tasks assigned yet.</div>}
-        </div>
-      </section>
     </section>
   );
 }
