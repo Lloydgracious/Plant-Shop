@@ -31,6 +31,8 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { readAppState, writeAppState } from './database';
+import { isSupabaseConfigured } from './supabaseClient';
 
 const sources = ['Facebook', 'TikTok', 'Viber', 'Phone'];
 const paymentStatuses = ['Paid', 'Pending', 'Partial'];
@@ -218,10 +220,47 @@ function usePersistentState(key, initialValue) {
       return initialValue;
     }
   });
+  const [databaseLoaded, setDatabaseLoaded] = useState(!isSupabaseConfigured);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDatabaseState() {
+      if (!isSupabaseConfigured) return;
+
+      try {
+        const databaseValue = await readAppState(key);
+        if (!isMounted) return;
+        if (databaseValue !== null) {
+          setState(databaseValue);
+          localStorage.setItem(key, JSON.stringify(databaseValue));
+        }
+      } catch (error) {
+        console.error(`Could not load ${key} from Supabase`, error);
+      } finally {
+        if (isMounted) setDatabaseLoaded(true);
+      }
+    }
+
+    loadDatabaseState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [key]);
 
   useEffect(() => {
     localStorage.setItem(key, JSON.stringify(state));
-  }, [key, state]);
+    if (!databaseLoaded || !isSupabaseConfigured) return;
+
+    const saveTimer = window.setTimeout(() => {
+      writeAppState(key, state).catch((error) => {
+        console.error(`Could not save ${key} to Supabase`, error);
+      });
+    }, 350);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [databaseLoaded, key, state]);
 
   return [state, setState];
 }
@@ -1782,7 +1821,7 @@ function SettingsPage({ users, setUsers, currentUser, onLogout }) {
           <label>Location<input value="Pyay, Bago Region, Myanmar" readOnly /></label>
           <label>Phone<input value="+95 9 756 040646" readOnly /></label>
           <label>Default payment method<input value="Cash" readOnly /></label>
-          <label>Data storage<input value="This browser / device" readOnly /></label>
+          <label>Data storage<input value={isSupabaseConfigured ? 'Supabase database + browser cache' : 'This browser / device'} readOnly /></label>
         </div>
       </section>
     </section>
