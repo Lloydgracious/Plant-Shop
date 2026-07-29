@@ -440,12 +440,12 @@ function LoginPage({ users, setUsers, onLogin, onAudit }) {
         <div className="login-brand"><span className="brand-mark"><Sprout size={26} /></span><div><strong>Plant Zone POS</strong><small>Garden Center · Pyay</small></div></div>
         <div className="login-copy"><span className="eyebrow">Secure workspace</span><h1>Welcome back</h1><p>Sign in to manage sales, stock, customers, invoices, and reports.</p></div>
         <div className="login-form">
-          <label>Username<input autoComplete="username" value={credentials.username} onChange={(event) => setCredentials({ ...credentials, username: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
+          <label>Login username<input autoComplete="username" placeholder="admin, staff, or your login username" value={credentials.username} onChange={(event) => setCredentials({ ...credentials, username: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
           <label>Password<input type="password" autoComplete="current-password" value={credentials.password} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
           {error && <p className="login-error" role="alert">{error}</p>}
           <button className="primary-button wide" onClick={login} disabled={busy}><ShieldCheck size={18} /> {busy ? 'Signing in...' : 'Sign in'}</button>
         </div>
-        <div className="demo-access"><strong>First-time access</strong><span>Admin: <b>admin</b> / <b>admin123</b></span><span>Staff: <b>staff</b> / <b>staff123</b></span><span>Change these after setup.</span></div>
+        <div className="demo-access"><strong>First-time access</strong><span>Use the login username, not the display name.</span><span>Admin: <b>admin</b> / <b>admin123</b></span><span>Staff: <b>staff</b> / <b>staff123</b></span><span>Change these after setup.</span></div>
       </section>
     </main>
   );
@@ -2119,8 +2119,8 @@ function SettingsPage({ users, setUsers, currentUser, auditLogs, logAudit, onLog
             <div className="panel-title-row"><div className="panel-title"><Users size={20} /><div><h2>User Management</h2><p>Create accounts, control report visibility, and disable access.</p></div></div></div>
             <div className="user-create-form">
               {formError && <p className="login-error span-2" role="alert">{formError}</p>}
-              <label>Name<input value={userDraft.name} onChange={(event) => setUserDraft({ ...userDraft, name: event.target.value })} /></label>
-              <label>Username<input value={userDraft.username} onChange={(event) => setUserDraft({ ...userDraft, username: event.target.value })} /></label>
+              <label>Display name<input placeholder="Shown inside the app" value={userDraft.name} onChange={(event) => setUserDraft({ ...userDraft, name: event.target.value })} /></label>
+              <label>Login username<input placeholder="Used on the login page" value={userDraft.username} onChange={(event) => setUserDraft({ ...userDraft, username: event.target.value })} /></label>
               <label>Temporary password<input type="password" value={userDraft.password} onChange={(event) => setUserDraft({ ...userDraft, password: event.target.value })} /></label>
               <label>Role<select value={userDraft.role} onChange={(event) => setUserDraft({ ...userDraft, role: event.target.value, can_view_reports: event.target.value !== 'staff' })}><option value="staff">Staff</option><option value="inventory_manager">Inventory Manager</option><option value="admin">Admin</option></select></label>
               <button className="primary-button" onClick={addUser}><Plus size={17} /> Add user</button>
