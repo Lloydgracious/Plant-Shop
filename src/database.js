@@ -1,5 +1,13 @@
 import { isSupabaseConfigured, supabase } from './supabaseClient';
 
+function normalizeDatabaseError(error, fallbackMessage) {
+  return {
+    success: false,
+    message: error?.message || fallbackMessage,
+    code: error?.code || 'DATABASE_ERROR',
+  };
+}
+
 export async function readAppState(key) {
   if (!isSupabaseConfigured) return null;
 
@@ -9,7 +17,7 @@ export async function readAppState(key) {
     .eq('state_key', key)
     .maybeSingle();
 
-  if (error) throw error;
+  if (error) throw normalizeDatabaseError(error, 'Could not load saved app data.');
   return data?.value ?? null;
 }
 
@@ -24,5 +32,5 @@ export async function writeAppState(key, value) {
       updated_at: new Date().toISOString(),
     });
 
-  if (error) throw error;
+  if (error) throw normalizeDatabaseError(error, 'Could not save app data.');
 }

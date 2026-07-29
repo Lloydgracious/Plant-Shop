@@ -210,6 +210,131 @@ const today = () => new Date().toISOString().slice(0, 10);
 const monthNow = () => new Date().toISOString().slice(0, 7);
 const clean = (value) => String(value ?? '').toLowerCase();
 const saleStageFor = (invoice) => saleStages.includes(invoice?.order_status) ? invoice.order_status : 'Confirmed';
+const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
+const passwordSaltBytes = 16;
+const roleLabels = {
+  admin: 'Admin',
+  inventory_manager: 'Inventory Manager',
+  staff: 'Staff',
+};
+
+const rolePermissions = {
+  admin: ['manage_users', 'manage_inventory', 'manage_sales', 'view_reports', 'view_audit_logs'],
+  inventory_manager: ['manage_inventory', 'manage_sales', 'view_reports'],
+  staff: ['manage_sales'],
+};
+
+const defaultAuditLogs = [
+  {
+    id: 1,
+    date: '2026-07-08T09:00:00.000Z',
+    user_name: 'Shop Admin',
+    action: 'Security setup',
+    target: 'Plant Zone POS',
+    detail: 'Audit trail initialized',
+  },
+];
+
+const defaultInventoryHistory = [
+  {
+    id: 1,
+    date: '2026-07-08T09:30:00.000Z',
+    plant_name: 'Monstera Deliciosa',
+    before_quantity: 26,
+    after_quantity: 24,
+    reason: 'Sample sale',
+    user_name: 'Shop Admin',
+  },
+  {
+    id: 2,
+    date: '2026-07-06T10:00:00.000Z',
+    plant_name: 'Ceramic Pot Set',
+    before_quantity: 22,
+    after_quantity: 42,
+    reason: 'Sample stock in',
+    user_name: 'Shop Admin',
+  },
+];
+
+function hasPermission(user, permission) {
+  return Boolean(rolePermissions[user?.role]?.includes(permission));
+}
+
+function appError(message, code = 'APP_ERROR') {
+  return { success: false, message, code };
+}
+
+function validateText(value, label, min = 2, max = 80) {
+  const text = String(value ?? '').trim();
+  if (text.length < min) return `${label} must be at least ${min} characters.`;
+  if (text.length > max) return `${label} must be ${max} characters or less.`;
+  return '';
+}
+
+function validatePlant(plant) {
+  const errors = [
+    validateText(plant.plant_name, 'Plant name', 2, 80),
+    validateText(plant.plant_code, 'Plant code', 2, 40),
+    plantTypes.includes(plant.plant_type) ? '' : 'Choose a valid plant category.',
+    Number(plant.quantity) >= 0 ? '' : 'Quantity cannot be negative.',
+    Number(plant.unit_price) >= 0 ? '' : 'Selling price cannot be negative.',
+    Number(plant.ws_price) >= 0 ? '' : 'Original cost cannot be negative.',
+    Number(plant.low_stock_limit) >= 0 ? '' : 'Low stock limit cannot be negative.',
+    String(plant.image || '').length <= 700000 ? '' : 'Image is too large. Use an image under about 500 KB.',
+  ].filter(Boolean);
+  return errors[0] || '';
+}
+
+function validateCustomer(customer) {
+  const errors = [
+    validateText(customer.cus_name, 'Customer name', 2, 80),
+    /^\+?[\d\s-]{6,24}$/.test(String(customer.cus_ph || '').trim()) ? '' : 'Enter a valid phone number.',
+    sources.includes(customer.source) ? '' : 'Choose a valid customer source.',
+  ].filter(Boolean);
+  return errors[0] || '';
+}
+
+function validateInvoiceDraft(draft) {
+  if (validateCustomer(draft.customer)) return validateCustomer(draft.customer);
+  const validItems = draft.items.filter((item) => item.plant_name.trim());
+  if (!validItems.length) return 'Add at least one plant to the sale.';
+  const invalidItem = validItems.find((item) => Number(item.quantity) <= 0 || Number(item.unit_price) < 0 || Number(item.ws_price) < 0);
+  if (invalidItem) return 'Sale items need positive quantity and non-negative prices.';
+  return '';
+}
+
+function bytesToBase64(bytes) {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function base64ToBytes(value) {
+  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+}
+
+async function hashPassword(password, salt = crypto.getRandomValues(new Uint8Array(passwordSaltBytes))) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: 210000, hash: 'SHA-256' },
+    key,
+    256,
+  );
+  return `pbkdf2_sha256$210000$${bytesToBase64(salt)}$${bytesToBase64(new Uint8Array(bits))}`;
+}
+
+async function verifyPassword(password, storedHash) {
+  if (!storedHash?.startsWith('pbkdf2_sha256$')) return false;
+  const [, iterations, saltValue, expected] = storedHash.split('$');
+  const salt = base64ToBytes(saltValue);
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: Number(iterations), hash: 'SHA-256' }, key, 256);
+  return bytesToBase64(new Uint8Array(bits)) === expected;
+}
 
 function usePersistentState(key, initialValue) {
   const [state, setState] = useState(() => {
@@ -265,22 +390,48 @@ function usePersistentState(key, initialValue) {
   return [state, setState];
 }
 
-function LoginPage({ users, onLogin }) {
+function LoginPage({ users, setUsers, onLogin, onAudit }) {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  const login = () => {
+  const login = async () => {
+    if (busy) return;
+    setBusy(true);
     const user = users.find((item) => (
       item.active
       && clean(item.username) === clean(credentials.username)
-      && item.password === credentials.password
     ));
-    if (!user) {
-      setError('Username or password is incorrect, or this account is inactive.');
+    const passwordMatches = user?.password_hash
+      ? await verifyPassword(credentials.password, user.password_hash)
+      : Boolean(user && user.password === credentials.password);
+    if (!user || !passwordMatches) {
+      const response = appError('Username or password is incorrect, or this account is inactive.', 'AUTH_FAILED');
+      setError(response.message);
+      onAudit({
+        user_name: credentials.username || 'Unknown',
+        action: 'Failed login',
+        target: 'Login',
+        detail: response.message,
+      });
+      setBusy(false);
       return;
     }
+    if (!user.password_hash && user.password) {
+      const password_hash = await hashPassword(credentials.password);
+      setUsers((current) => current.map((item) => (
+        item.id === user.id ? { ...item, password_hash, password: undefined } : item
+      )));
+    }
     setError('');
+    onAudit({
+      user_name: user.name,
+      action: 'User login',
+      target: user.username,
+      detail: `${roleLabels[user.role] || user.role} signed in`,
+    });
     onLogin(String(user.id));
+    setBusy(false);
   };
 
   return (
@@ -292,9 +443,9 @@ function LoginPage({ users, onLogin }) {
           <label>Username<input autoComplete="username" value={credentials.username} onChange={(event) => setCredentials({ ...credentials, username: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
           <label>Password<input type="password" autoComplete="current-password" value={credentials.password} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
           {error && <p className="login-error" role="alert">{error}</p>}
-          <button className="primary-button wide" onClick={login}><ShieldCheck size={18} /> Sign in</button>
+          <button className="primary-button wide" onClick={login} disabled={busy}><ShieldCheck size={18} /> {busy ? 'Signing in...' : 'Sign in'}</button>
         </div>
-        <div className="demo-access"><strong>First-time access</strong><span>Admin: <b>admin</b> / <b>admin123</b></span><span>Staff: <b>staff</b> / <b>staff123</b></span></div>
+        <div className="demo-access"><strong>First-time access</strong><span>Admin: <b>admin</b> / <b>admin123</b></span><span>Staff: <b>staff</b> / <b>staff123</b></span><span>Change these after setup.</span></div>
       </section>
     </main>
   );
@@ -312,21 +463,79 @@ function App() {
   const [invoices, setInvoices] = usePersistentState('plant-zone-invoices', sampleInvoices);
   const [saleAdjustments, setSaleAdjustments] = usePersistentState('plant-zone-sale-adjustments', []);
   const [users, setUsers] = usePersistentState('plant-zone-users', defaultUsers);
-  const [sessionUserId, setSessionUserId] = useState(() => sessionStorage.getItem('plant-zone-session-user') || '');
+  const [auditLogs, setAuditLogs] = usePersistentState('plant-zone-audit-logs', defaultAuditLogs);
+  const [inventoryHistory, setInventoryHistory] = usePersistentState('plant-zone-stock-history', defaultInventoryHistory);
+  const [sessionUserId, setSessionUserId] = useState(() => {
+    try {
+      const session = JSON.parse(sessionStorage.getItem('plant-zone-session') || 'null');
+      return session?.expiresAt > Date.now() ? String(session.userId) : '';
+    } catch {
+      return '';
+    }
+  });
   const currentUser = users.find((user) => String(user.id) === String(sessionUserId) && user.active);
-  const canViewReports = Boolean(currentUser && (currentUser.role === 'admin' || currentUser.can_view_reports));
-  const visibleNavItems = navItems.filter((item) => item.group !== 'Reports' || canViewReports);
+  const canViewReports = Boolean(currentUser && (hasPermission(currentUser, 'view_reports') || currentUser.can_view_reports));
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.group === 'Reports') return canViewReports;
+    if (item.id === 'stock') return hasPermission(currentUser, 'manage_inventory');
+    if (item.id === 'settings') return Boolean(currentUser);
+    return hasPermission(currentUser, 'manage_sales');
+  });
 
   const rows = useMemo(() => flattenInvoiceRows(invoices), [invoices]);
+  const logAudit = (entry) => {
+    setAuditLogs((current) => [{
+      id: Date.now() + Math.random(),
+      date: new Date().toISOString(),
+      user_name: entry.user_name || currentUser?.name || 'System',
+      action: entry.action,
+      target: entry.target || '',
+      detail: entry.detail || '',
+    }, ...current].slice(0, 500));
+  };
 
   useEffect(() => {
-    if (sessionUserId) sessionStorage.setItem('plant-zone-session-user', sessionUserId);
-    else sessionStorage.removeItem('plant-zone-session-user');
+    if (sessionUserId) {
+      sessionStorage.setItem('plant-zone-session', JSON.stringify({
+        userId: sessionUserId,
+        expiresAt: Date.now() + SESSION_DURATION_MS,
+      }));
+      sessionStorage.removeItem('plant-zone-session-user');
+    } else {
+      sessionStorage.removeItem('plant-zone-session');
+      sessionStorage.removeItem('plant-zone-session-user');
+    }
   }, [sessionUserId]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      try {
+        const session = JSON.parse(sessionStorage.getItem('plant-zone-session') || 'null');
+        if (sessionUserId && (!session?.expiresAt || session.expiresAt <= Date.now())) {
+          logAudit({
+            action: 'Session expired',
+            target: currentUser?.username || 'Session',
+            detail: 'Automatic logout after inactivity window',
+          });
+          setSessionUserId('');
+          setActivePage('pos');
+        }
+      } catch {
+        setSessionUserId('');
+      }
+    }, 60000);
+    return () => window.clearInterval(timer);
+  }, [currentUser?.username, sessionUserId]);
 
   useEffect(() => {
     if (!canViewReports && ['daily', 'monthly', 'export'].includes(activePage)) setActivePage('pos');
   }, [activePage, canViewReports]);
+
+  useEffect(() => {
+    if (currentUser && !visibleNavItems.some((item) => item.id === activePage)) {
+      setActivePage(visibleNavItems[0]?.id || 'settings');
+    }
+  }, [activePage, currentUser, visibleNavItems]);
 
   const nextInvoiceNo = useMemo(() => {
     const dateKey = today().replaceAll('-', '');
@@ -337,7 +546,7 @@ function App() {
   const todayRows = useMemo(() => rows.filter((row) => row.date === today()), [rows]);
   const monthlyRows = useMemo(() => rows.filter((row) => row.date.startsWith(monthNow())), [rows]);
 
-  if (!currentUser) return <LoginPage users={users} onLogin={setSessionUserId} />;
+  if (!currentUser) return <LoginPage users={users} setUsers={setUsers} onLogin={setSessionUserId} onAudit={logAudit} />;
 
   return (
     <div className="app-shell">
@@ -398,10 +607,13 @@ function App() {
             adjustments={saleAdjustments}
             setAdjustments={setSaleAdjustments}
             nextInvoiceNo={nextInvoiceNo}
+            currentUser={currentUser}
+            logAudit={logAudit}
+            setInventoryHistory={setInventoryHistory}
           />
         )}
         {activePage === 'invoices' && <InvoiceArchivePage invoices={invoices} />}
-        {activePage === 'stock' && <StockPage plants={plants} setPlants={setPlants} adjustments={saleAdjustments} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} />}
+        {activePage === 'stock' && <StockPage plants={plants} setPlants={setPlants} adjustments={saleAdjustments} history={inventoryHistory} setHistory={setInventoryHistory} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} currentUser={currentUser} logAudit={logAudit} />}
         {activePage === 'customers' && (
           <CustomersPage
             customers={customers}
@@ -409,12 +621,14 @@ function App() {
             invoices={invoices}
             isFormOpen={customerModalOpen}
             setIsFormOpen={setCustomerModalOpen}
+            currentUser={currentUser}
+            logAudit={logAudit}
           />
         )}
         {activePage === 'daily' && <DailyDataPage rows={rows} />}
         {activePage === 'monthly' && <MonthlyDataPage rows={rows} invoices={invoices} />}
         {activePage === 'export' && <ExportCenterPage rows={rows} invoices={invoices} />}
-        {activePage === 'settings' && <SettingsPage users={users} setUsers={setUsers} currentUser={currentUser} onLogout={() => { setSessionUserId(''); setActivePage('pos'); }} />}
+        {activePage === 'settings' && <SettingsPage users={users} setUsers={setUsers} currentUser={currentUser} auditLogs={auditLogs} logAudit={logAudit} onLogout={() => { logAudit({ action: 'User logout', target: currentUser.username, detail: `${currentUser.name} signed out` }); setSessionUserId(''); setActivePage('pos'); }} />}
       </main>
     </div>
   );
@@ -565,7 +779,7 @@ function Totals({ totals }) {
   );
 }
 
-function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isFormOpen, setIsFormOpen, adjustments, setAdjustments, nextInvoiceNo }) {
+function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isFormOpen, setIsFormOpen, adjustments, setAdjustments, nextInvoiceNo, currentUser, logAudit, setInventoryHistory }) {
   const [processTab, setProcessTab] = useState('return');
   const [salesStageFilter, setSalesStageFilter] = useState('All');
   const [selectedSalesDetailStage, setSelectedSalesDetailStage] = useState('');
@@ -624,10 +838,27 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
 
   const updateSaleStage = (invoice, stage) => {
     if (!invoice.stock_deducted) {
+      const historyRows = plants.flatMap((plant) => {
+        const soldItem = invoice.items.find((item) => String(item.plant_id) === String(plant.id) || item.plant_code === plant.plant_code);
+        if (!soldItem) return [];
+        const beforeQuantity = Number(plant.quantity || 0);
+        const afterQuantity = Math.max(0, beforeQuantity - Number(soldItem.quantity || 0));
+        return [{
+          id: Date.now() + Math.random(),
+          date: new Date().toISOString(),
+          plant_name: plant.plant_name,
+          plant_code: plant.plant_code,
+          before_quantity: beforeQuantity,
+          after_quantity: afterQuantity,
+          reason: `Sale confirmed: ${invoice.invoice_no}`,
+          user_name: currentUser.name,
+        }];
+      });
       setPlants((current) => current.map((plant) => {
         const soldItem = invoice.items.find((item) => String(item.plant_id) === String(plant.id) || item.plant_code === plant.plant_code);
         return soldItem ? { ...plant, quantity: Math.max(0, Number(plant.quantity || 0) - Number(soldItem.quantity || 0)) } : plant;
       }));
+      if (historyRows.length) setInventoryHistory((history) => [...historyRows, ...history]);
     }
     setInvoices((current) => current.map((item) => item.id === invoice.id ? {
       ...item,
@@ -635,12 +866,14 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
       stock_deducted: true,
       updated_at: new Date().toISOString(),
     } : item));
+    logAudit({ action: 'Sale stage updated', target: invoice.invoice_no, detail: `${saleStageFor(invoice)} -> ${stage}` });
   };
 
   const updatePaidAmount = (invoice, value) => {
     const paidAmount = Math.min(Math.max(Number(value) || 0, 0), Number(invoice.sale_amount || 0));
     const paymentStatus = paidAmount <= 0 ? 'Pending' : paidAmount >= Number(invoice.sale_amount || 0) ? 'Paid' : 'Partial';
     setInvoices((current) => current.map((item) => item.id === invoice.id ? { ...item, paid_amount: paidAmount, payment_status: paymentStatus } : item));
+    logAudit({ action: 'Payment updated', target: invoice.invoice_no, detail: `${money(paidAmount)} / ${money(invoice.sale_amount)}` });
   };
 
   const applyProcess = () => {
@@ -681,7 +914,18 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
         }
         : plant
     )));
+    setInventoryHistory((history) => [{
+      id: processId + Math.random(),
+      date: new Date().toISOString(),
+      plant_name: selectedPlant.plant_name,
+      plant_code: selectedPlant.plant_code,
+      before_quantity: Number(selectedPlant.quantity || 0),
+      after_quantity: Math.max(0, Number(selectedPlant.quantity || 0) + stockEffect.available),
+      reason: `${processLabel}: ${draft.reason.trim()}`,
+      user_name: currentUser.name,
+    }, ...history]);
     setAdjustments((current) => [processRecord, ...current]);
+    logAudit({ action: 'Inventory adjusted', target: selectedPlant.plant_name, detail: `${processLabel}: ${stockEffect.available >= 0 ? '+' : ''}${stockEffect.available}` });
     setProcessNotice(processRecord);
     setDraft((current) => ({ ...current, quantity: 1, amount: 0, reason: '' }));
   };
@@ -699,6 +943,7 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
         : plant
     )));
     setAdjustments((current) => current.filter((item) => item.id !== processNotice.id));
+    logAudit({ action: 'Inventory adjustment undone', target: processNotice.plant_name, detail: processNotice.reason });
     setProcessNotice(null);
   };
 
@@ -869,7 +1114,7 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
         </div>
       </section>
 
-      <InvoicesPage invoices={invoices} setInvoices={setInvoices} plants={plants} setPlants={setPlants} customers={customers} isFormOpen={isFormOpen} setIsFormOpen={setIsFormOpen} isListOpen={false} setIsListOpen={() => {}} nextInvoiceNo={nextInvoiceNo} showWorkspace={false} />
+      <InvoicesPage invoices={invoices} setInvoices={setInvoices} plants={plants} setPlants={setPlants} customers={customers} isFormOpen={isFormOpen} setIsFormOpen={setIsFormOpen} isListOpen={false} setIsListOpen={() => {}} nextInvoiceNo={nextInvoiceNo} showWorkspace={false} currentUser={currentUser} logAudit={logAudit} setInventoryHistory={setInventoryHistory} />
     </section>
   );
 }
@@ -923,7 +1168,7 @@ function InvoiceArchivePage({ invoices }) {
   );
 }
 
-function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isFormOpen, setIsFormOpen, isListOpen, setIsListOpen, nextInvoiceNo, showWorkspace = true }) {
+function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isFormOpen, setIsFormOpen, isListOpen, setIsListOpen, nextInvoiceNo, showWorkspace = true, currentUser, logAudit, setInventoryHistory }) {
   const emptyItem = { plant_id: '', plant_name: '', plant_code: '', plant_type: 'Indoor', size: 'M', quantity: 1, unit_price: 0, ws_price: 0 };
   const emptyDraft = {
     invoice_no: nextInvoiceNo,
@@ -940,6 +1185,7 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
   const [selectedId, setSelectedId] = useState(invoices[0]?.id ?? null);
   const [draft, setDraft] = useState(emptyDraft);
   const [editingId, setEditingId] = useState(null);
+  const [formError, setFormError] = useState('');
   const selected = invoices.find((invoice) => invoice.id === selectedId) || invoices[0];
   const filtered = invoices.filter((invoice) => (
     (!filters.date || invoice.sale_date === filters.date)
@@ -973,6 +1219,7 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
   const closeForm = () => {
     setDraft({ ...emptyDraft, invoice_no: nextInvoiceNo });
     setEditingId(null);
+    setFormError('');
     setIsFormOpen(false);
   };
 
@@ -1045,7 +1292,11 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
   };
 
   const saveInvoice = () => {
-    if (!draft.customer.cus_name.trim() || !draft.items.some((item) => item.plant_name.trim())) return;
+    const validationError = validateInvoiceDraft(draft);
+    if (validationError) {
+      setFormError(appError(validationError, 'VALIDATION_ERROR').message);
+      return;
+    }
     const items = draft.items
       .filter((item) => item.plant_name.trim())
       .map((item) => {
@@ -1090,13 +1341,30 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
     };
     if (editingId) {
       setInvoices((current) => current.map((item) => (item.id === editingId ? invoice : item)));
+      logAudit?.({ action: 'Product sale updated', target: invoice.invoice_no, detail: `${invoice.items.length} item(s), ${money(invoice.sale_amount)}` });
     } else {
+      const historyRows = [];
       setPlants?.((current) => current.map((plant) => {
         const soldItem = items.find((item) => String(item.plant_id) === String(plant.id) || item.plant_code === plant.plant_code);
-        return soldItem ? { ...plant, quantity: Math.max(0, Number(plant.quantity || 0) - Number(soldItem.quantity || 0)) } : plant;
+        if (!soldItem) return plant;
+        const beforeQuantity = Number(plant.quantity || 0);
+        const afterQuantity = Math.max(0, beforeQuantity - Number(soldItem.quantity || 0));
+        historyRows.push({
+          id: Date.now() + Math.random(),
+          date: new Date().toISOString(),
+          plant_name: plant.plant_name,
+          plant_code: plant.plant_code,
+          before_quantity: beforeQuantity,
+          after_quantity: afterQuantity,
+          reason: `Sale: ${invoice.invoice_no}`,
+          user_name: currentUser?.name || 'System',
+        });
+        return { ...plant, quantity: afterQuantity, updated_at: today() };
       }));
+      if (historyRows.length) setInventoryHistory?.((current) => [...historyRows, ...current]);
       setInvoices((current) => [invoice, ...current]);
       setSelectedId(invoice.id);
+      logAudit?.({ action: 'Product sale created', target: invoice.invoice_no, detail: `${invoice.items.length} item(s), ${money(invoice.sale_amount)}` });
     }
     closeForm();
   };
@@ -1127,7 +1395,11 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
   return (
     <>
       {showWorkspace && <section className="page-grid invoice-page-grid invoice-detail-grid">
-        <InvoiceDetail invoice={selected} onEdit={editInvoice} onDelete={(id) => setInvoices((current) => current.filter((invoice) => invoice.id !== id))} />
+        <InvoiceDetail invoice={selected} onEdit={editInvoice} onDelete={(id) => {
+          const invoice = invoices.find((item) => item.id === id);
+          setInvoices((current) => current.filter((invoice) => invoice.id !== id));
+          if (invoice) logAudit?.({ action: 'Product sale deleted', target: invoice.invoice_no, detail: money(invoice.sale_amount) });
+        }} />
       </section>}
       {isListOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsListOpen(false)}>
@@ -1154,6 +1426,7 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
               <button className="icon-button" onClick={closeForm} aria-label="Close invoice form"><X size={17} /></button>
             </div>
             <div className="form-grid invoice-form">
+              {formError && <p className="login-error span-2" role="alert">{formError}</p>}
               <label>Invoice no<input value={draft.invoice_no} onChange={(event) => setDraft({ ...draft, invoice_no: event.target.value })} /></label>
               <label>Sale date<input type="date" value={draft.sale_date} onChange={(event) => setDraft({ ...draft, sale_date: event.target.value })} /></label>
               <label className="span-2">Choose customer<select value={draft.customer.id || ''} onChange={(event) => selectCustomer(event.target.value)}><option value="">New customer / not saved yet</option>{customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.cus_name} - {customer.cus_ph || customer.source}</option>)}</select></label>
@@ -1279,15 +1552,12 @@ function InvoiceDetail({ invoice, onEdit, onDelete, readOnly = false }) {
   );
 }
 
-function StockPage({ plants, setPlants, adjustments = [], isFormOpen, setIsFormOpen }) {
+function StockPage({ plants, setPlants, adjustments = [], history, setHistory, isFormOpen, setIsFormOpen, currentUser, logAudit }) {
   const emptyPlant = { plant_name: '', plant_code: '', plant_type: 'Indoor', size: 'M', quantity: 0, unit_price: 0, ws_price: 0, low_stock_limit: 5, image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=800&q=80' };
   const [draft, setDraft] = useState(emptyPlant);
   const [editingId, setEditingId] = useState(null);
   const [filters, setFilters] = useState({ type: '', size: '', minPrice: '', maxPrice: '' });
-  const [history, setHistory] = usePersistentState('plant-zone-stock-history', [
-    { id: 1, date: '2026-07-08', plant_name: 'Monstera Deliciosa', type: 'Stock out', quantity: 2 },
-    { id: 2, date: '2026-07-06', plant_name: 'Ceramic Pot Set', type: 'Stock in', quantity: 20 },
-  ]);
+  const [formError, setFormError] = useState('');
   const sizes = useMemo(() => Array.from(new Set(plants.map((plant) => plant.size).filter(Boolean))).sort(), [plants]);
   const stockTotals = useMemo(() => plants.reduce((totals, plant) => ({
     units: totals.units + Number(plant.quantity || 0),
@@ -1309,21 +1579,40 @@ function StockPage({ plants, setPlants, adjustments = [], isFormOpen, setIsFormO
   }), [plants, filters]);
 
   const savePlant = () => {
-    if (!draft.plant_name || !draft.plant_code) return;
+    const validationError = validatePlant(draft);
+    if (validationError) {
+      setFormError(appError(validationError, 'VALIDATION_ERROR').message);
+      return;
+    }
+    const previous = plants.find((plant) => plant.id === editingId);
+    const beforeQuantity = Number(previous?.quantity || 0);
+    const afterQuantity = Number(draft.quantity || 0);
     if (editingId) {
       setPlants((current) => current.map((plant) => (plant.id === editingId ? { ...draft, id: editingId, updated_at: today() } : plant)));
     } else {
       setPlants((current) => [{ ...draft, id: Date.now(), created_at: today(), updated_at: today() }, ...current]);
     }
-    setHistory((current) => [{ id: Date.now(), date: today(), plant_name: draft.plant_name, type: editingId ? 'Edit' : 'Stock in', quantity: Number(draft.quantity) }, ...current]);
+    setHistory((current) => [{
+      id: Date.now() + Math.random(),
+      date: new Date().toISOString(),
+      plant_name: draft.plant_name,
+      plant_code: draft.plant_code,
+      before_quantity: beforeQuantity,
+      after_quantity: afterQuantity,
+      reason: editingId ? 'Manual plant update' : 'New plant created',
+      user_name: currentUser.name,
+    }, ...current]);
+    logAudit({ action: editingId ? 'Product updated' : 'Product created', target: draft.plant_name, detail: `${beforeQuantity} -> ${afterQuantity}` });
     setDraft(emptyPlant);
     setEditingId(null);
+    setFormError('');
     setIsFormOpen(false);
   };
 
   const closeForm = () => {
     setDraft(emptyPlant);
     setEditingId(null);
+    setFormError('');
     setIsFormOpen(false);
   };
 
@@ -1336,6 +1625,11 @@ function StockPage({ plants, setPlants, adjustments = [], isFormOpen, setIsFormO
   const uploadPlantImage = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > 512000) {
+      setFormError(appError('Upload a valid image under 500 KB.', 'FILE_UPLOAD_ERROR').message);
+      event.target.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       setDraft((current) => ({ ...current, image: reader.result }));
@@ -1386,7 +1680,20 @@ function StockPage({ plants, setPlants, adjustments = [], isFormOpen, setIsFormO
                 <span className={Number(plant.quantity) === 0 ? 'status-out' : plant.quantity <= plant.low_stock_limit ? 'status-low' : 'status-in'}>{Number(plant.quantity) === 0 ? 'Out of stock' : plant.quantity <= plant.low_stock_limit ? 'Low stock' : 'In stock'}</span>
                 <div className="stock-card-actions">
                   <button className="ghost-button" onClick={() => editPlant(plant)}><Edit3 size={16} /> Edit</button>
-                  <button className="ghost-button danger" onClick={() => setPlants((current) => current.filter((item) => item.id !== plant.id))}><Trash2 size={16} /> Delete</button>
+                  <button className="ghost-button danger" onClick={() => {
+                    setPlants((current) => current.filter((item) => item.id !== plant.id));
+                    setHistory((current) => [{
+                      id: Date.now() + Math.random(),
+                      date: new Date().toISOString(),
+                      plant_name: plant.plant_name,
+                      plant_code: plant.plant_code,
+                      before_quantity: Number(plant.quantity || 0),
+                      after_quantity: 0,
+                      reason: 'Product deleted',
+                      user_name: currentUser.name,
+                    }, ...current]);
+                    logAudit({ action: 'Product deleted', target: plant.plant_name, detail: `${plant.quantity} unit(s) removed` });
+                  }}><Trash2 size={16} /> Delete</button>
                 </div>
               </div>
               <div className="stock-card-footer">
@@ -1402,7 +1709,7 @@ function StockPage({ plants, setPlants, adjustments = [], isFormOpen, setIsFormO
         <h3>Stock in/out history</h3>
         <div className="mini-history">
           {history.map((entry) => (
-            <span key={entry.id}>{entry.date} - {entry.type} - {entry.plant_name} - {entry.quantity}</span>
+            <span key={entry.id}>{String(entry.date).slice(0, 10)} - {entry.plant_name} - {entry.before_quantity ?? '-'} {'->'} {entry.after_quantity ?? entry.quantity ?? '-'} - {entry.reason || entry.type} - {entry.user_name || 'System'}</span>
           ))}
         </div>
       </footer>
@@ -1434,6 +1741,7 @@ function StockPage({ plants, setPlants, adjustments = [], isFormOpen, setIsFormO
               <button className="icon-button" onClick={closeForm} aria-label="Close add plant form"><X size={17} /></button>
             </div>
             <div className="form-grid stock-form">
+              {formError && <p className="login-error span-2" role="alert">{formError}</p>}
               <label>Plant name<input value={draft.plant_name} onChange={(event) => setDraft({ ...draft, plant_name: event.target.value })} /></label>
               <label>Plant code<input value={draft.plant_code} onChange={(event) => setDraft({ ...draft, plant_code: event.target.value })} /></label>
               <label>Type<select value={draft.plant_type} onChange={(event) => setDraft({ ...draft, plant_type: event.target.value })}>{plantTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
@@ -1459,12 +1767,13 @@ function StockPage({ plants, setPlants, adjustments = [], isFormOpen, setIsFormO
   );
 }
 
-function CustomersPage({ customers, setCustomers, invoices, isFormOpen, setIsFormOpen }) {
+function CustomersPage({ customers, setCustomers, invoices, isFormOpen, setIsFormOpen, currentUser, logAudit }) {
   const emptyCustomer = { cus_name: '', cus_ph: '', cus_address: '', source: 'Facebook' };
   const [source, setSource] = useState('');
   const [draft, setDraft] = useState(emptyCustomer);
   const [editingId, setEditingId] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [formError, setFormError] = useState('');
   const filtered = source ? customers.filter((customer) => customer.source === source) : customers;
   const selectedPurchases = selectedCustomer ? invoices.filter((invoice) => (
     invoice.customer.cus_ph === selectedCustomer.cus_ph || invoice.customer.cus_name === selectedCustomer.cus_name
@@ -1472,22 +1781,30 @@ function CustomersPage({ customers, setCustomers, invoices, isFormOpen, setIsFor
   const selectedRows = flattenInvoiceRows(selectedPurchases);
 
   const saveCustomer = () => {
-    if (!draft.cus_name.trim() || !draft.cus_ph.trim()) return;
+    const validationError = validateCustomer(draft);
+    if (validationError) {
+      setFormError(appError(validationError, 'VALIDATION_ERROR').message);
+      return;
+    }
     if (editingId) {
       setCustomers((current) => current.map((customer) => (
         customer.id === editingId ? { ...customer, ...draft, id: editingId, updated_at: today() } : customer
       )));
+      logAudit({ action: 'Customer updated', target: draft.cus_name, detail: draft.cus_ph });
     } else {
       setCustomers((current) => [{ ...draft, id: Date.now(), created_at: today(), updated_at: today() }, ...current]);
+      logAudit({ action: 'Customer created', target: draft.cus_name, detail: draft.cus_ph });
     }
     setDraft(emptyCustomer);
     setEditingId(null);
+    setFormError('');
     setIsFormOpen(false);
   };
 
   const closeForm = () => {
     setDraft(emptyCustomer);
     setEditingId(null);
+    setFormError('');
     setIsFormOpen(false);
   };
 
@@ -1529,7 +1846,7 @@ function CustomersPage({ customers, setCustomers, invoices, isFormOpen, setIsFor
                 <div className="customer-card-actions">
                   <button className="ghost-button" onClick={(event) => { event.stopPropagation(); setSelectedCustomer(customer); }}><User size={16} /> View</button>
                   <button className="ghost-button" onClick={(event) => { event.stopPropagation(); editCustomer(customer); }}><Edit3 size={16} /> Edit</button>
-                  <button className="ghost-button danger" onClick={(event) => { event.stopPropagation(); setCustomers((current) => current.filter((item) => item.id !== customer.id)); }}><Trash2 size={16} /> Delete</button>
+                  <button className="ghost-button danger" onClick={(event) => { event.stopPropagation(); setCustomers((current) => current.filter((item) => item.id !== customer.id)); logAudit({ action: 'Customer deleted', target: customer.cus_name, detail: customer.cus_ph }); }}><Trash2 size={16} /> Delete</button>
                 </div>
                 <div className="customer-card-footer">
                   <span><CalendarDays size={14} /> {customer.updated_at || customer.created_at || today()}</span>
@@ -1580,6 +1897,7 @@ function CustomersPage({ customers, setCustomers, invoices, isFormOpen, setIsFor
               <button className="icon-button" onClick={closeForm} aria-label="Close add customer form"><X size={17} /></button>
             </div>
             <div className="form-grid customer-form">
+              {formError && <p className="login-error span-2" role="alert">{formError}</p>}
               <label>Customer name<input value={draft.cus_name} onChange={(event) => setDraft({ ...draft, cus_name: event.target.value })} /></label>
               <label>Phone<input value={draft.cus_ph} onChange={(event) => setDraft({ ...draft, cus_ph: event.target.value })} /></label>
               <label className="span-2">Address<input value={draft.cus_address} onChange={(event) => setDraft({ ...draft, cus_address: event.target.value })} /></label>
@@ -1768,12 +2086,20 @@ function ExportCenterPage({ rows, invoices }) {
   );
 }
 
-function SettingsPage({ users, setUsers, currentUser, onLogout }) {
+function SettingsPage({ users, setUsers, currentUser, auditLogs, logAudit, onLogout }) {
   const [userDraft, setUserDraft] = useState({ name: '', username: '', password: '', role: 'staff', can_view_reports: false });
-  const addUser = () => {
-    if (!userDraft.name.trim() || !userDraft.username.trim() || !userDraft.password || users.some((user) => clean(user.username) === clean(userDraft.username))) return;
-    setUsers((current) => [...current, { ...userDraft, id: Date.now(), active: true }]);
+  const [formError, setFormError] = useState('');
+  const addUser = async () => {
+    if (!hasPermission(currentUser, 'manage_users')) return;
+    if (!userDraft.name.trim() || !userDraft.username.trim() || userDraft.password.length < 8 || users.some((user) => clean(user.username) === clean(userDraft.username))) {
+      setFormError(appError('Enter a unique username and a password with at least 8 characters.', 'VALIDATION_ERROR').message);
+      return;
+    }
+    const password_hash = await hashPassword(userDraft.password);
+    setUsers((current) => [...current, { ...userDraft, password: undefined, password_hash, id: Date.now(), active: true }]);
+    logAudit({ action: 'User created', target: userDraft.username, detail: roleLabels[userDraft.role] || userDraft.role });
     setUserDraft({ name: '', username: '', password: '', role: 'staff', can_view_reports: false });
+    setFormError('');
   };
 
   return (
@@ -1782,20 +2108,21 @@ function SettingsPage({ users, setUsers, currentUser, onLogout }) {
         <div className="panel-title-row"><div className="panel-title"><ShieldCheck size={20} /><div><h2>Signed-in Account</h2><p>Manage the current session on this device.</p></div></div></div>
         <div className="current-account">
           <div className="avatar">{currentUser.name.slice(0, 1).toUpperCase()}</div>
-          <div><strong>{currentUser.name}</strong><span>@{currentUser.username} · {currentUser.role === 'admin' ? 'Administrator' : 'Staff'}</span></div>
+          <div><strong>{currentUser.name}</strong><span>@{currentUser.username} - {roleLabels[currentUser.role] || currentUser.role}</span></div>
           <button className="ghost-button danger" onClick={onLogout}><LogOut size={17} /> Log out</button>
         </div>
       </section>
 
-      {currentUser.role === 'admin' && (
+      {hasPermission(currentUser, 'manage_users') && (
         <>
           <section className="panel reveal">
             <div className="panel-title-row"><div className="panel-title"><Users size={20} /><div><h2>User Management</h2><p>Create accounts, control report visibility, and disable access.</p></div></div></div>
             <div className="user-create-form">
+              {formError && <p className="login-error span-2" role="alert">{formError}</p>}
               <label>Name<input value={userDraft.name} onChange={(event) => setUserDraft({ ...userDraft, name: event.target.value })} /></label>
               <label>Username<input value={userDraft.username} onChange={(event) => setUserDraft({ ...userDraft, username: event.target.value })} /></label>
               <label>Temporary password<input type="password" value={userDraft.password} onChange={(event) => setUserDraft({ ...userDraft, password: event.target.value })} /></label>
-              <label>Role<select value={userDraft.role} onChange={(event) => setUserDraft({ ...userDraft, role: event.target.value, can_view_reports: event.target.value === 'admin' })}><option value="staff">Staff</option><option value="admin">Admin</option></select></label>
+              <label>Role<select value={userDraft.role} onChange={(event) => setUserDraft({ ...userDraft, role: event.target.value, can_view_reports: event.target.value !== 'staff' })}><option value="staff">Staff</option><option value="inventory_manager">Inventory Manager</option><option value="admin">Admin</option></select></label>
               <button className="primary-button" onClick={addUser}><Plus size={17} /> Add user</button>
             </div>
             <div className="user-management-list">
@@ -1803,14 +2130,26 @@ function SettingsPage({ users, setUsers, currentUser, onLogout }) {
                 <article key={user.id}>
                   <div className="avatar">{user.name.slice(0, 1).toUpperCase()}</div>
                   <div className="user-identity"><strong>{user.name}</strong><span>@{user.username} · {user.role}</span></div>
-                  <label className="permission-toggle"><input type="checkbox" checked={user.role === 'admin' || Boolean(user.can_view_reports)} disabled={user.role === 'admin'} onChange={(event) => setUsers((current) => current.map((item) => item.id === user.id ? { ...item, can_view_reports: event.target.checked } : item))} /><span>Reports</span></label>
-                  <label className="permission-toggle"><input type="checkbox" checked={Boolean(user.active)} disabled={String(user.id) === String(currentUser.id)} onChange={(event) => setUsers((current) => current.map((item) => item.id === user.id ? { ...item, active: event.target.checked } : item))} /><span>Active</span></label>
-                  {String(user.id) !== String(currentUser.id) && <button className="icon-button danger" onClick={() => setUsers((current) => current.filter((item) => item.id !== user.id))} aria-label={`Delete ${user.name}`}><Trash2 size={16} /></button>}
+                  <label className="permission-toggle"><input type="checkbox" checked={hasPermission(user, 'view_reports') || Boolean(user.can_view_reports)} disabled={hasPermission(user, 'view_reports')} onChange={(event) => { setUsers((current) => current.map((item) => item.id === user.id ? { ...item, can_view_reports: event.target.checked } : item)); logAudit({ action: 'User permission updated', target: user.username, detail: `Reports: ${event.target.checked ? 'on' : 'off'}` }); }} /><span>Reports</span></label>
+                  <label className="permission-toggle"><input type="checkbox" checked={Boolean(user.active)} disabled={String(user.id) === String(currentUser.id)} onChange={(event) => { setUsers((current) => current.map((item) => item.id === user.id ? { ...item, active: event.target.checked } : item)); logAudit({ action: 'User status updated', target: user.username, detail: event.target.checked ? 'Active' : 'Inactive' }); }} /><span>Active</span></label>
+                  {String(user.id) !== String(currentUser.id) && <button className="icon-button danger" onClick={() => { setUsers((current) => current.filter((item) => item.id !== user.id)); logAudit({ action: 'User deleted', target: user.username, detail: user.name }); }} aria-label={`Delete ${user.name}`}><Trash2 size={16} /></button>}
                 </article>
               ))}
             </div>
           </section>
         </>
+      )}
+
+      {hasPermission(currentUser, 'view_audit_logs') && (
+        <section className="panel reveal">
+          <div className="panel-title-row"><div className="panel-title"><ShieldCheck size={20} /><div><h2>Audit Log</h2><p>Security and inventory activity trail.</p></div></div></div>
+          <div className="mini-history">
+            {auditLogs.slice(0, 80).map((entry) => (
+              <span key={entry.id}>{String(entry.date).slice(0, 10)} - {entry.user_name} - {entry.action} - {entry.target} - {entry.detail}</span>
+            ))}
+            {!auditLogs.length && <div className="empty-state">No audit events yet.</div>}
+          </div>
+        </section>
       )}
 
       <section className="panel reveal">
