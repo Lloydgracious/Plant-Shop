@@ -618,7 +618,7 @@ function App() {
             setInventoryHistory={setInventoryHistory}
           />
         )}
-        {activePage === 'invoices' && <InvoiceArchivePage invoices={invoices} setInvoices={setInvoices} logAudit={logAudit} />}
+        {activePage === 'invoices' && <InvoiceArchivePage invoices={invoices} setInvoices={setInvoices} plants={plants} customers={customers} logAudit={logAudit} />}
         {activePage === 'stock' && <StockPage plants={plants} setPlants={setPlants} adjustments={saleAdjustments} history={inventoryHistory} setHistory={setInventoryHistory} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} currentUser={currentUser} logAudit={logAudit} />}
         {activePage === 'customers' && (
           <CustomersPage
@@ -1140,10 +1140,25 @@ function StockPreviewRow({ label, current, delta }) {
   );
 }
 
-function InvoiceArchivePage({ invoices, setInvoices, logAudit }) {
+function InvoiceArchivePage({ invoices, setInvoices, plants = [], customers = [], logAudit }) {
+  const emptyItem = { plant_id: '', plant_name: '', plant_code: '', plant_type: 'Indoor', size: 'M', quantity: 1, unit_price: 0, ws_price: 0 };
+  const emptyDraft = {
+    invoice_no: '',
+    sale_date: today(),
+    payment_status: 'Paid',
+    payment_method: 'Cash',
+    paid_amount: 0,
+    order_status: 'Preparing',
+    discount_amount: 0,
+    customer: { cus_name: '', cus_ph: '', cus_address: '', source: 'Facebook' },
+    items: [emptyItem],
+  };
   const [filters, setFilters] = useState({ customer: '', status: '', date: today() });
   const [showMore, setShowMore] = useState(false);
   const [selectedId, setSelectedId] = useState(invoices[0]?.id || null);
+  const [draft, setDraft] = useState(emptyDraft);
+  const [editingId, setEditingId] = useState(null);
+  const [formError, setFormError] = useState('');
   const sortedInvoices = [...invoices].sort((a, b) => String(b.sale_date || '').localeCompare(String(a.sale_date || '')) || String(b.created_at || b.id).localeCompare(String(a.created_at || a.id)));
   const previewInvoices = sortedInvoices.slice(0, 4);
   const previewIds = new Set(previewInvoices.map((invoice) => invoice.id));
@@ -1160,10 +1175,146 @@ function InvoiceArchivePage({ invoices, setInvoices, logAudit }) {
     return groups;
   }, {});
   const selected = invoices.find((invoice) => invoice.id === selectedId) || previewInvoices[0] || filtered[0];
+  const invoiceTotals = useMemo(() => {
+    const itemTotals = draft.items.reduce((totals, item) => {
+      const quantity = Number(item.quantity) || 0;
+      const unit = Number(item.unit_price) || 0;
+      const ws = Number(item.ws_price) || 0;
+      totals.gross += quantity * unit;
+      totals.wholesale += quantity * ws;
+      return totals;
+    }, { gross: 0, wholesale: 0 });
+    const discount = Math.min(Math.max(Number(draft.discount_amount) || 0, 0), itemTotals.gross);
+    const total = itemTotals.gross - discount;
+    return { ...itemTotals, discount, total, profit: total - itemTotals.wholesale };
+  }, [draft.items, draft.discount_amount]);
   const deleteInvoice = (invoice) => {
     setInvoices((current) => current.filter((item) => item.id !== invoice.id));
     if (selectedId === invoice.id) setSelectedId('');
     logAudit?.({ action: 'Product sale deleted', target: invoice.invoice_no, detail: money(invoice.sale_amount) });
+  };
+  const closeEditForm = () => {
+    setDraft(emptyDraft);
+    setEditingId(null);
+    setFormError('');
+  };
+  const editInvoice = (invoice) => {
+    if (!invoice) return;
+    setDraft({
+      invoice_no: invoice.invoice_no,
+      sale_date: invoice.sale_date,
+      payment_status: invoice.payment_status,
+      payment_method: invoice.payment_method,
+      paid_amount: Number(invoice.paid_amount ?? (invoice.payment_status === 'Paid' ? invoice.sale_amount : 0)),
+      order_status: invoice.order_status || 'Confirmed',
+      discount_amount: Number(invoice.discount_amount || 0),
+      customer: { ...invoice.customer },
+      items: invoice.items.map((item) => ({
+        plant_id: item.plant_id || '',
+        plant_name: item.plant_name,
+        plant_code: item.plant_code,
+        plant_type: item.plant_type,
+        size: item.size,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        ws_price: item.ws_price,
+      })),
+    });
+    setEditingId(invoice.id);
+    setFormError('');
+  };
+  const selectCustomer = (customerId) => {
+    const customer = customers.find((item) => String(item.id) === customerId);
+    if (!customer) {
+      setDraft((current) => ({
+        ...current,
+        customer: { cus_name: '', cus_ph: '', cus_address: '', source: current.customer.source || 'Facebook' },
+      }));
+      return;
+    }
+    setDraft((current) => ({
+      ...current,
+      customer: {
+        id: customer.id,
+        cus_name: customer.cus_name || '',
+        cus_ph: customer.cus_ph || '',
+        cus_address: customer.cus_address || '',
+        source: customer.source || 'Facebook',
+      },
+    }));
+  };
+  const selectPlant = (index, plantId) => {
+    const plant = plants.find((item) => String(item.id) === plantId);
+    if (!plant) return;
+    updateDraftItem(index, {
+      plant_id: plant.id,
+      plant_name: plant.plant_name,
+      plant_code: plant.plant_code,
+      plant_type: plant.plant_type,
+      size: plant.size,
+      unit_price: plant.unit_price,
+      ws_price: plant.ws_price,
+    });
+  };
+  const updateDraftItem = (index, updates) => {
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...updates } : item)),
+    }));
+  };
+  const saveEditedInvoice = () => {
+    const validationError = validateInvoiceDraft(draft);
+    if (validationError) {
+      setFormError(appError(validationError, 'VALIDATION_ERROR').message);
+      return;
+    }
+    const existingInvoice = invoices.find((invoice) => invoice.id === editingId);
+    if (!existingInvoice) return;
+    const items = draft.items
+      .filter((item) => item.plant_name.trim())
+      .map((item) => {
+        const quantity = Number(item.quantity) || 0;
+        const unit = Number(item.unit_price) || 0;
+        const ws = Number(item.ws_price) || 0;
+        return {
+          plant_id: item.plant_id || Date.now(),
+          plant_name: item.plant_name,
+          plant_code: item.plant_code,
+          plant_type: item.plant_type,
+          size: item.size,
+          quantity,
+          unit_price: unit,
+          ws_price: ws,
+          sale_amount: quantity * unit,
+          profit_amount: (quantity * (unit - ws)) - (invoiceTotals.gross ? invoiceTotals.discount * ((quantity * unit) / invoiceTotals.gross) : 0),
+        };
+      });
+    const paidAmount = draft.payment_status === 'Paid'
+      ? invoiceTotals.total
+      : Math.min(Math.max(Number(draft.paid_amount) || 0, 0), invoiceTotals.total);
+    const paymentStatus = paidAmount <= 0 ? 'Pending' : paidAmount >= invoiceTotals.total ? 'Paid' : 'Partial';
+    const invoice = {
+      ...existingInvoice,
+      invoice_no: draft.invoice_no,
+      customer: { ...existingInvoice.customer, ...draft.customer, updated_at: today() },
+      sale_date: draft.sale_date || today(),
+      payment_status: paymentStatus,
+      payment_method: draft.payment_method,
+      paid_amount: paidAmount,
+      order_status: draft.order_status || existingInvoice.order_status || 'Preparing',
+      gross_total: invoiceTotals.gross,
+      discount_amount: invoiceTotals.discount,
+      subtotal: invoiceTotals.total,
+      wholesale_total: invoiceTotals.wholesale,
+      profit_total: invoiceTotals.profit,
+      sale_amount: invoiceTotals.total,
+      items,
+      updated_at: new Date().toISOString(),
+    };
+    setInvoices((current) => current.map((item) => (item.id === editingId ? invoice : item)));
+    setSelectedId(invoice.id);
+    logAudit?.({ action: 'Product sale updated', target: invoice.invoice_no, detail: `${invoice.items.length} item(s), ${money(invoice.sale_amount)}` });
+    closeEditForm();
   };
 
   return (
@@ -1202,7 +1353,48 @@ function InvoiceArchivePage({ invoices, setInvoices, logAudit }) {
           </div>
         )}
       </div>
-      <InvoiceDetail invoice={selected} onEdit={null} onDelete={() => selected && deleteInvoice(selected)} />
+      <InvoiceDetail invoice={selected} onEdit={editInvoice} onDelete={() => selected && deleteInvoice(selected)} />
+      {editingId && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={closeEditForm}>
+          <div className="stock-modal invoice-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-edit-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-title-row">
+              <div>
+                <h2 id="invoice-edit-modal-title">Edit Sale</h2>
+                <p>Update sale customer, payment, and item rows.</p>
+              </div>
+              <button className="icon-button" onClick={closeEditForm} aria-label="Close invoice form"><X size={17} /></button>
+            </div>
+            <div className="form-grid invoice-form">
+              {formError && <p className="login-error span-2" role="alert">{formError}</p>}
+              <label>Invoice no<input value={draft.invoice_no} onChange={(event) => setDraft({ ...draft, invoice_no: event.target.value })} /></label>
+              <label>Sale date<input type="date" value={draft.sale_date} onChange={(event) => setDraft({ ...draft, sale_date: event.target.value })} /></label>
+              <label className="span-2">Choose customer<select value={draft.customer.id || ''} onChange={(event) => selectCustomer(event.target.value)}><option value="">New customer / not saved yet</option>{customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.cus_name} - {customer.cus_ph || customer.source}</option>)}</select></label>
+              <label>Customer name<input value={draft.customer.cus_name} onChange={(event) => setDraft({ ...draft, customer: { ...draft.customer, cus_name: event.target.value } })} /></label>
+              <label>Phone<input value={draft.customer.cus_ph} onChange={(event) => setDraft({ ...draft, customer: { ...draft.customer, cus_ph: event.target.value } })} /></label>
+              <label>Address<input value={draft.customer.cus_address} onChange={(event) => setDraft({ ...draft, customer: { ...draft.customer, cus_address: event.target.value } })} /></label>
+              <label>Source<select value={draft.customer.source} onChange={(event) => setDraft({ ...draft, customer: { ...draft.customer, source: event.target.value } })}>{sources.map((source) => <option key={source}>{source}</option>)}</select></label>
+              <label>Payment status<select value={draft.payment_status} onChange={(event) => setDraft({ ...draft, payment_status: event.target.value, paid_amount: event.target.value === 'Paid' ? invoiceTotals.total : event.target.value === 'Pending' ? 0 : draft.paid_amount })}>{paymentStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+              <label>Payment method<input value={draft.payment_method} onChange={(event) => setDraft({ ...draft, payment_method: event.target.value })} /></label>
+              {draft.payment_status === 'Partial' && <label className="span-2">Amount paid (Ks)<input type="number" min="0" max={invoiceTotals.total} value={draft.paid_amount} onChange={(event) => setDraft({ ...draft, paid_amount: event.target.value })} /><small>Balance: {money(Math.max(0, invoiceTotals.total - Number(draft.paid_amount || 0)))}</small></label>}
+              <label className="span-2">Sale discount (Ks)<input type="number" min="0" max={invoiceTotals.gross} value={draft.discount_amount} onChange={(event) => setDraft({ ...draft, discount_amount: event.target.value })} placeholder="0" /></label>
+            </div>
+            <div className="invoice-item-editor">
+              {draft.items.map((item, index) => (
+                <div className="invoice-edit-row" key={`archive-draft-item-${index}`}>
+                  <label>Plant<select value={item.plant_id || ''} onChange={(event) => selectPlant(index, event.target.value)}><option value="">Choose stock plant</option>{plants.map((plant) => <option value={plant.id} key={plant.id}>{plant.plant_name} - {plant.plant_code}</option>)}</select></label>
+                  <label>Qty<input type="number" value={item.quantity} onChange={(event) => updateDraftItem(index, { quantity: Number(event.target.value) })} /></label>
+                  <label>Selling price<input type="number" value={item.unit_price} onChange={(event) => updateDraftItem(index, { unit_price: Number(event.target.value) })} /></label>
+                  <label>Original cost<input type="number" value={item.ws_price} onChange={(event) => updateDraftItem(index, { ws_price: Number(event.target.value) })} /></label>
+                  <button className="icon-button danger" onClick={() => setDraft((current) => ({ ...current, items: current.items.filter((_, itemIndex) => itemIndex !== index) }))} aria-label="Remove invoice item"><Trash2 size={16} /></button>
+                </div>
+              ))}
+              <button className="ghost-button" onClick={() => setDraft((current) => ({ ...current, items: [...current.items, emptyItem] }))}><Plus size={17} /> Add item</button>
+            </div>
+            <Totals totals={{ gross: invoiceTotals.gross, discount: invoiceTotals.discount, total: invoiceTotals.total }} />
+            <button className="primary-button wide" onClick={saveEditedInvoice}><Plus size={17} /> Update sale</button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
