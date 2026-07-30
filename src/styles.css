@@ -3501,7 +3501,6 @@ td {
 
 .login-brand strong,
 .login-brand small,
-.demo-access span,
 .current-account strong,
 .current-account span,
 .user-identity strong,
@@ -3551,20 +3550,6 @@ td {
   font-weight: 800;
 }
 
-.demo-access {
-  display: grid;
-  gap: 5px;
-  padding: 13px;
-  border-radius: 12px;
-  color: var(--muted);
-  background: var(--surface-soft);
-  font-size: 12px;
-}
-
-.demo-access strong {
-  color: var(--forest-dark);
-}
-
 .user-chip {
   max-width: 180px;
   overflow: hidden;
@@ -3600,12 +3585,27 @@ td {
 
 .user-management-list article {
   display: grid;
-  grid-template-columns: auto minmax(180px, 1fr) auto auto auto;
+  grid-template-columns: auto minmax(180px, 1fr) minmax(150px, 180px) auto auto auto;
   align-items: center;
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
+}
+
+.user-role-control {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.user-role-control select {
+  min-height: 36px;
+  font-size: 12px;
+  text-transform: none;
 }
 
 .permission-toggle {
@@ -3738,6 +3738,10 @@ td {
     grid-template-columns: auto 1fr auto;
   }
 
+  .user-management-list .user-role-control {
+    grid-column: 2 / -1;
+  }
+
   .user-management-list .permission-toggle {
     grid-row: 2;
   }
@@ -3836,6 +3840,10 @@ td {
 
   .user-management-list article {
     grid-template-columns: auto 1fr;
+  }
+
+  .user-management-list .user-role-control {
+    grid-column: 1 / -1;
   }
 
   .user-management-list .permission-toggle,

@@ -1984,20 +1984,31 @@ function MonthlyDataPage({ rows, invoices }) {
         setFilters={setFilters}
         mode="month"
         filename="plant-zone-monthly-data"
+        summary={{
+          'Total sales': money(totalSales),
+          'Total profit': money(totalProfit),
+          'Invoice count': invoiceIds.size || monthlyInvoices.length,
+          'Best-selling plant': bestPlant || '-',
+          'Top source': topSource,
+        }}
       />
     </section>
   );
 }
 
-function ReportPage({ title, description, rows, filters, setFilters, mode, filename }) {
+function ReportPage({ title, description, rows, filters, setFilters, mode, filename, summary }) {
+  const defaultSummary = {
+    'Total sales': money(rows.reduce((sum, row) => sum + Number(row.sale_amount || 0), 0)),
+    'Total profit': money(rows.reduce((sum, row) => sum + Number(row.profit || 0), 0)),
+    'Item rows': rows.length,
+  };
+
   return (
     <section className="panel reveal">
       <div className="panel-title-row report-title-row">
         <div><h2>{title}</h2><p>{description}</p></div>
         <div className="export-actions">
-          <button className="ghost-button" onClick={() => exportRows(filename, rows, 'csv')}><Download size={17} /> CSV</button>
-          <button className="ghost-button" onClick={() => exportRows(filename, rows, 'xls')}><FileSpreadsheet size={17} /> Excel</button>
-          <button className="ghost-button" onClick={() => window.print()}><Printer size={17} /> PDF</button>
+          <button className="ghost-button" onClick={() => exportRows(filename, rows, 'xls', { title, filters, summary: summary || defaultSummary })}><FileSpreadsheet size={17} /> Excel</button>
         </div>
       </div>
       <div className="filter-grid">
@@ -2019,6 +2030,9 @@ function DataTable({ rows }) {
   const columns = [
     ['date', 'Date'],
     ['invoice_no', 'Invoice'],
+    ['order_status', 'Sale stage'],
+    ['payment_status', 'Payment status'],
+    ['payment_method', 'Payment method'],
     ['plant_name', 'Plant name'],
     ['plant_code', 'Code'],
     ['plant_type', 'Type'],
@@ -2032,6 +2046,10 @@ function DataTable({ rows }) {
     ['customer_source', 'Source'],
     ['sale_amount', 'Sale amount'],
     ['profit', 'Profit'],
+    ['discount_amount', 'Invoice discount'],
+    ['invoice_total', 'Invoice total'],
+    ['paid_amount', 'Paid amount'],
+    ['balance_amount', 'Balance'],
   ];
 
   return (
@@ -2044,7 +2062,7 @@ function DataTable({ rows }) {
           {rows.map((row, index) => (
             <tr key={`${row.invoice_no}-${row.plant_code}-${index}`}>
               {columns.map(([key]) => (
-                <td key={key}>{['unit_price', 'ws_price', 'sale_amount', 'profit'].includes(key) ? money(row[key]) : row[key]}</td>
+                <td key={key}>{['unit_price', 'ws_price', 'sale_amount', 'profit', 'discount_amount', 'invoice_total', 'paid_amount', 'balance_amount'].includes(key) ? money(row[key]) : row[key]}</td>
               ))}
             </tr>
           ))}
@@ -2110,6 +2128,12 @@ function SettingsPage({ users, setUsers, currentUser, auditLogs, logAudit, onLog
     setUserDraft({ name: '', username: '', password: '', role: 'staff', can_view_reports: false });
     setFormError('');
   };
+  const updateUserRole = (user, role) => {
+    setUsers((current) => current.map((item) => (
+      item.id === user.id ? { ...item, role, can_view_reports: role !== 'staff' } : item
+    )));
+    logAudit({ action: 'User role updated', target: user.username, detail: `${roleLabels[user.role] || user.role} -> ${roleLabels[role] || role}` });
+  };
 
   return (
     <section className="settings-page">
@@ -2139,6 +2163,7 @@ function SettingsPage({ users, setUsers, currentUser, auditLogs, logAudit, onLog
                 <article key={user.id}>
                   <div className="avatar">{user.name.slice(0, 1).toUpperCase()}</div>
                   <div className="user-identity"><strong>{user.name}</strong><span>@{user.username} · {user.role}</span></div>
+                  <label className="user-role-control">Role<select value={user.role} disabled={String(user.id) === String(currentUser.id)} onChange={(event) => updateUserRole(user, event.target.value)}>{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
                   <label className="permission-toggle"><input type="checkbox" checked={hasPermission(user, 'view_reports') || Boolean(user.can_view_reports)} disabled={hasPermission(user, 'view_reports')} onChange={(event) => { setUsers((current) => current.map((item) => item.id === user.id ? { ...item, can_view_reports: event.target.checked } : item)); logAudit({ action: 'User permission updated', target: user.username, detail: `Reports: ${event.target.checked ? 'on' : 'off'}` }); }} /><span>Reports</span></label>
                   <label className="permission-toggle"><input type="checkbox" checked={Boolean(user.active)} disabled={String(user.id) === String(currentUser.id)} onChange={(event) => { setUsers((current) => current.map((item) => item.id === user.id ? { ...item, active: event.target.checked } : item)); logAudit({ action: 'User status updated', target: user.username, detail: event.target.checked ? 'Active' : 'Inactive' }); }} /><span>Active</span></label>
                   {String(user.id) !== String(currentUser.id) && <button className="icon-button danger" onClick={() => { setUsers((current) => current.filter((item) => item.id !== user.id)); logAudit({ action: 'User deleted', target: user.username, detail: user.name }); }} aria-label={`Delete ${user.name}`}><Trash2 size={16} /></button>}
@@ -2180,6 +2205,9 @@ function flattenInvoiceRows(invoices) {
   return invoices.flatMap((invoice) => invoice.items.map((item) => ({
     date: invoice.sale_date,
     invoice_no: invoice.invoice_no,
+    order_status: saleStageFor(invoice),
+    payment_status: invoice.payment_status,
+    payment_method: invoice.payment_method,
     plant_name: item.plant_name,
     plant_code: item.plant_code,
     plant_type: item.plant_type,
@@ -2193,6 +2221,10 @@ function flattenInvoiceRows(invoices) {
     customer_source: invoice.customer.source,
     sale_amount: item.sale_amount,
     profit: item.profit_amount,
+    discount_amount: Number(invoice.discount_amount || 0),
+    invoice_total: Number(invoice.sale_amount || invoice.subtotal || 0),
+    paid_amount: Number(invoice.paid_amount ?? (invoice.payment_status === 'Paid' ? invoice.sale_amount : 0)),
+    balance_amount: Math.max(0, Number(invoice.sale_amount || invoice.subtotal || 0) - Number(invoice.paid_amount ?? (invoice.payment_status === 'Paid' ? invoice.sale_amount : 0))),
   })));
 }
 
@@ -2206,16 +2238,81 @@ function filterRows(rows, filters, mode) {
   });
 }
 
-function exportRows(filename, rows, type) {
-  const headers = ['date', 'invoice_no', 'plant_name', 'plant_code', 'plant_type', 'size', 'quantity', 'unit_price', 'ws_price', 'customer_name', 'customer_phone', 'customer_address', 'customer_source', 'sale_amount', 'profit'];
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function exportRows(filename, rows, type, options = {}) {
+  const columns = [
+    ['date', 'Date'],
+    ['invoice_no', 'Invoice No'],
+    ['order_status', 'Sale Stage'],
+    ['payment_status', 'Payment Status'],
+    ['payment_method', 'Payment Method'],
+    ['plant_name', 'Plant Name'],
+    ['plant_code', 'Plant Code'],
+    ['plant_type', 'Plant Type'],
+    ['size', 'Size'],
+    ['quantity', 'Quantity'],
+    ['unit_price', 'Selling Price'],
+    ['ws_price', 'Original Cost'],
+    ['customer_name', 'Customer Name'],
+    ['customer_phone', 'Customer Phone'],
+    ['customer_address', 'Customer Address'],
+    ['customer_source', 'Customer Source'],
+    ['sale_amount', 'Sale Amount'],
+    ['profit', 'Profit'],
+    ['discount_amount', 'Invoice Discount'],
+    ['invoice_total', 'Invoice Total'],
+    ['paid_amount', 'Paid Amount'],
+    ['balance_amount', 'Balance'],
+  ];
+  const headers = columns.map(([key]) => key);
+  const moneyColumns = ['unit_price', 'ws_price', 'sale_amount', 'profit', 'discount_amount', 'invoice_total', 'paid_amount', 'balance_amount'];
   if (type === 'xls') {
-    const tableRows = rows.map((row) => `<tr>${headers.map((header) => `<td>${row[header] ?? ''}</td>`).join('')}</tr>`).join('');
-    download(`${filename}.xls`, `application/vnd.ms-excel`, `<table><thead><tr>${headers.map((header) => `<th>${header}</th>`).join('')}</tr></thead><tbody>${tableRows}</tbody></table>`);
+    const summary = options.summary || {
+      'Total sales': money(rows.reduce((sum, row) => sum + Number(row.sale_amount || 0), 0)),
+      'Total profit': money(rows.reduce((sum, row) => sum + Number(row.profit || 0), 0)),
+      'Item rows': rows.length,
+    };
+    const filterRows = Object.entries(options.filters || {})
+      .filter(([, value]) => value)
+      .map(([key, value]) => `<tr><th>${escapeHtml(key.replaceAll('_', ' '))}</th><td>${escapeHtml(value)}</td></tr>`)
+      .join('');
+    const summaryRows = Object.entries(summary)
+      .map(([label, value]) => `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`)
+      .join('');
+    const tableRows = rows.map((row) => `<tr>${columns.map(([key]) => {
+      const value = moneyColumns.includes(key) ? money(row[key]) : row[key];
+      return `<td>${escapeHtml(value)}</td>`;
+    }).join('')}</tr>`).join('');
+    const workbook = `<!doctype html><html><head><meta charset="utf-8"><style>
+      body{font-family:Arial,sans-serif;color:#1f2a1f}
+      h1{font-size:20px;margin:0 0 12px}
+      table{border-collapse:collapse;width:100%;margin-bottom:18px}
+      th{background:#dff3e3;color:#236235;font-weight:700}
+      th,td{border:1px solid #8fbf98;padding:8px;text-align:left;vertical-align:top}
+      .meta{width:420px}
+      .amount{text-align:right}
+    </style></head><body>
+      <h1>${escapeHtml(options.title || filename)}</h1>
+      <table class="meta"><tbody>${filterRows}${summaryRows}</tbody></table>
+      <table><thead><tr>${columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join('')}</tr></thead><tbody>${tableRows || `<tr><td colspan="${columns.length}">No rows match the current filters.</td></tr>`}</tbody></table>
+    </body></html>`;
+    download(`${filename}.xls`, 'application/vnd.ms-excel;charset=utf-8', workbook);
     return;
   }
   const csv = [
-    headers.join(','),
-    ...rows.map((row) => headers.map((header) => `"${String(row[header] ?? '').replaceAll('"', '""')}"`).join(',')),
+    columns.map(([, label]) => label).join(','),
+    ...rows.map((row) => headers.map((header) => {
+      const value = moneyColumns.includes(header) ? money(row[header]) : row[header];
+      return `"${String(value ?? '').replaceAll('"', '""')}"`;
+    }).join(',')),
   ].join('\n');
   download(`${filename}.csv`, 'text/csv;charset=utf-8', csv);
 }
