@@ -210,6 +210,13 @@ const today = () => new Date().toISOString().slice(0, 10);
 const monthNow = () => new Date().toISOString().slice(0, 7);
 const clean = (value) => String(value ?? '').toLowerCase();
 const saleStageFor = (invoice) => saleStages.includes(invoice?.order_status) ? invoice.order_status : 'Confirmed';
+const CONFIRMED_DETAIL_VISIBLE_DAYS = 7;
+const isWithinDays = (value, days) => {
+  if (!value) return true;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return true;
+  return Date.now() - date.getTime() <= days * 24 * 60 * 60 * 1000;
+};
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
 const passwordSaltBytes = 16;
 const roleLabels = {
@@ -816,6 +823,9 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
     ? invoicesByStage
     : invoicesByStage.filter((item) => item.stage === salesStageFilter);
   const selectedSalesDetail = invoicesByStage.find((item) => item.stage === selectedSalesDetailStage);
+  const selectedSalesDetailInvoices = selectedSalesDetail?.stage === 'Confirmed'
+    ? selectedSalesDetail.invoices.filter((invoice) => isWithinDays(invoice.created_at || invoice.sale_date, CONFIRMED_DETAIL_VISIBLE_DAYS))
+    : selectedSalesDetail?.invoices || [];
   const requestedQuantity = Math.max(0, Number(draft.quantity) || 0);
   const processQuantity = processTab === 'damage'
     ? Math.min(requestedQuantity, Number(selectedPlant?.quantity || 0))
@@ -1031,12 +1041,12 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
             <div className="modal-title-row">
               <div>
                 <h2 id="sales-detail-title">{selectedSalesDetail.stage} Sales</h2>
-                <p>{selectedSalesDetail.invoices.length} sale{selectedSalesDetail.invoices.length === 1 ? '' : 's'} in this stage.</p>
+                <p>{selectedSalesDetailInvoices.length} sale{selectedSalesDetailInvoices.length === 1 ? '' : 's'} in this stage.</p>
               </div>
               <button className="icon-button" onClick={() => setSelectedSalesDetailStage('')} aria-label="Close sales details"><X size={18} /></button>
             </div>
             <div className="sales-stage-list sales-detail-list">
-              {selectedSalesDetail.invoices.map((invoice) => (
+              {selectedSalesDetailInvoices.map((invoice) => (
                 <article className="sale-card" key={invoice.id}>
                   <div className="sale-card-main">
                     <strong>{invoice.invoice_no} - {invoice.customer.cus_name}</strong>
@@ -1049,7 +1059,7 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
                   <div className="payment-balance"><span>{invoice.payment_status}</span><strong>Balance {money(Math.max(0, Number(invoice.sale_amount || 0) - Number(invoice.paid_amount ?? (invoice.payment_status === 'Paid' ? invoice.sale_amount : 0))))}</strong></div>
                 </article>
               ))}
-              {!selectedSalesDetail.invoices.length && <div className="empty-state sales-stage-empty">No {selectedSalesDetail.stage.toLowerCase()} sales.</div>}
+              {!selectedSalesDetailInvoices.length && <div className="empty-state sales-stage-empty">No {selectedSalesDetail.stage.toLowerCase()} sales.</div>}
             </div>
           </div>
         </div>
