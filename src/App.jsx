@@ -452,7 +452,6 @@ function LoginPage({ users, setUsers, onLogin, onAudit }) {
           {error && <p className="login-error" role="alert">{error}</p>}
           <button className="primary-button wide" onClick={login} disabled={busy}><ShieldCheck size={18} /> {busy ? 'Signing in...' : 'Sign in'}</button>
         </div>
-        <div className="demo-access"><strong>First-time access</strong><span>Use the login username, not the display name.</span><span>Admin: <b>admin</b> / <b>admin123</b></span><span>Staff: <b>staff</b> / <b>staff123</b></span><span>Change these after setup.</span></div>
       </section>
     </main>
   );
@@ -2126,7 +2125,7 @@ function SettingsPage({ users, setUsers, currentUser, auditLogs, logAudit, onLog
       {hasPermission(currentUser, 'manage_users') && (
         <>
           <section className="panel reveal">
-            <div className="panel-title-row"><div className="panel-title"><Users size={20} /><div><h2>User Management</h2><p>Create accounts, control report visibility, and disable access.</p></div></div></div>
+            <div className="panel-title-row"><div className="panel-title"><Users size={20} /><div><h2>User Management</h2><p>Create admin or staff accounts, control report visibility, disable access, and delete old accounts.</p></div></div></div>
             <div className="user-create-form">
               {formError && <p className="login-error span-2" role="alert">{formError}</p>}
               <label>Display name<input placeholder="Shown inside the app" value={userDraft.name} onChange={(event) => setUserDraft({ ...userDraft, name: event.target.value })} /></label>
