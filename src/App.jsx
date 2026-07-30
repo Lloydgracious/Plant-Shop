@@ -618,7 +618,26 @@ function App() {
             setInventoryHistory={setInventoryHistory}
           />
         )}
-        {activePage === 'invoices' && <InvoiceArchivePage invoices={invoices} setInvoices={setInvoices} logAudit={logAudit} />}
+        {activePage === 'invoices' && (
+          <section className="invoices-workspace-page">
+            <InvoicesPage
+              invoices={invoices}
+              setInvoices={setInvoices}
+              plants={plants}
+              setPlants={setPlants}
+              customers={customers}
+              isFormOpen={invoiceModalOpen}
+              setIsFormOpen={setInvoiceModalOpen}
+              isListOpen={invoiceListOpen}
+              setIsListOpen={setInvoiceListOpen}
+              nextInvoiceNo={nextInvoiceNo}
+              currentUser={currentUser}
+              logAudit={logAudit}
+              setInventoryHistory={setInventoryHistory}
+            />
+            <InvoiceArchivePage invoices={invoices} setInvoices={setInvoices} logAudit={logAudit} showDetail={false} />
+          </section>
+        )}
         {activePage === 'stock' && <StockPage plants={plants} setPlants={setPlants} adjustments={saleAdjustments} history={inventoryHistory} setHistory={setInventoryHistory} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} currentUser={currentUser} logAudit={logAudit} />}
         {activePage === 'customers' && (
           <CustomersPage
@@ -644,6 +663,7 @@ function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, 
   const page = navItems.find((item) => item.id === activePage);
   const heroPlant = heroPlantImages[activePage] || heroPlantImages.pos;
   const isSalesPage = activePage === 'sales';
+  const isInvoicesPage = activePage === 'invoices';
   const isStockPage = activePage === 'stock';
   const isCustomersPage = activePage === 'customers';
   return (
@@ -670,9 +690,10 @@ function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, 
             <p className="eyebrow">Plant Zone Garden Center</p>
             <h1>{page?.label || 'Dashboard'}</h1>
             <p className="hero-copy">{activePage === 'pos' ? 'Key sales, invoice, stock, customer, and source health in one overview.' : 'A modern POS for plant sales, social media customers, delivery orders, reservations, landscaping service, invoices, and export-ready daily/monthly data.'}</p>
-            {(isSalesPage || isStockPage || isCustomersPage) && (
+            {(isSalesPage || isInvoicesPage || isStockPage || isCustomersPage) && (
               <div className="hero-actions">
                 {isSalesPage && <button className="primary-button" onClick={onAddInvoice}><Plus size={17} /> New Sale</button>}
+                {isInvoicesPage && <button className="primary-button" onClick={onAddInvoice}><Plus size={17} /> New Invoice</button>}
                 {isStockPage && <button className="primary-button" onClick={onAddPlant}><Plus size={17} /> Add Plant</button>}
                 {isCustomersPage && <button className="primary-button" onClick={onAddCustomer}><Plus size={17} /> Add Customer</button>}
               </div>
@@ -1140,7 +1161,7 @@ function StockPreviewRow({ label, current, delta }) {
   );
 }
 
-function InvoiceArchivePage({ invoices, setInvoices, logAudit }) {
+function InvoiceArchivePage({ invoices, setInvoices, logAudit, showDetail = true }) {
   const [filters, setFilters] = useState({ customer: '', status: '', date: today() });
   const [showMore, setShowMore] = useState(false);
   const [selectedId, setSelectedId] = useState(invoices[0]?.id || null);
@@ -1202,7 +1223,7 @@ function InvoiceArchivePage({ invoices, setInvoices, logAudit }) {
           </div>
         )}
       </div>
-      <InvoiceDetail invoice={selected} onEdit={null} onDelete={() => selected && deleteInvoice(selected)} />
+      {showDetail && <InvoiceDetail invoice={selected} onEdit={null} onDelete={() => selected && deleteInvoice(selected)} />}
     </section>
   );
 }
