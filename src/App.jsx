@@ -618,7 +618,7 @@ function App() {
             setInventoryHistory={setInventoryHistory}
           />
         )}
-        {activePage === 'invoices' && <InvoiceArchivePage invoices={invoices} />}
+        {activePage === 'invoices' && <InvoiceArchivePage invoices={invoices} setInvoices={setInvoices} logAudit={logAudit} />}
         {activePage === 'stock' && <StockPage plants={plants} setPlants={setPlants} adjustments={saleAdjustments} history={inventoryHistory} setHistory={setInventoryHistory} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} currentUser={currentUser} logAudit={logAudit} />}
         {activePage === 'customers' && (
           <CustomersPage
@@ -1140,40 +1140,82 @@ function StockPreviewRow({ label, current, delta }) {
   );
 }
 
-function InvoiceArchivePage({ invoices }) {
-  const [filters, setFilters] = useState({ customer: '', status: '', date: '' });
+function InvoiceArchivePage({ invoices, setInvoices, logAudit }) {
+  const [filters, setFilters] = useState({ customer: '', status: '', date: today() });
+  const [showMore, setShowMore] = useState(false);
   const [selectedId, setSelectedId] = useState(invoices[0]?.id || null);
-  const filtered = invoices.filter((invoice) => (
-    (!filters.customer || clean(invoice.customer.cus_name).includes(clean(filters.customer)))
+  const sortedInvoices = [...invoices].sort((a, b) => String(b.sale_date || '').localeCompare(String(a.sale_date || '')) || String(b.created_at || b.id).localeCompare(String(a.created_at || a.id)));
+  const previewInvoices = sortedInvoices.slice(0, 4);
+  const previewIds = new Set(previewInvoices.map((invoice) => invoice.id));
+  const filtered = sortedInvoices.filter((invoice) => (
+    !previewIds.has(invoice.id)
+    && (!filters.customer || clean(invoice.customer.cus_name).includes(clean(filters.customer)))
     && (!filters.status || invoice.payment_status === filters.status)
     && (!filters.date || invoice.sale_date === filters.date)
-  ));
-  const selected = invoices.find((invoice) => invoice.id === selectedId) || filtered[0];
+  )).sort((a, b) => String(b.created_at || b.id).localeCompare(String(a.created_at || a.id)));
+  const groupedInvoices = filtered.reduce((groups, invoice) => {
+    const date = invoice.sale_date || 'No date';
+    groups[date] = groups[date] || [];
+    groups[date].push(invoice);
+    return groups;
+  }, {});
+  const selected = invoices.find((invoice) => invoice.id === selectedId) || previewInvoices[0] || filtered[0];
+  const deleteInvoice = (invoice) => {
+    setInvoices((current) => current.filter((item) => item.id !== invoice.id));
+    if (selectedId === invoice.id) setSelectedId('');
+    logAudit?.({ action: 'Product sale deleted', target: invoice.invoice_no, detail: money(invoice.sale_amount) });
+  };
 
   return (
     <section className="invoice-archive">
       <div className="panel reveal invoice-archive-panel">
         <div className="panel-title-row">
-          <div><h2>Invoice Archive</h2><p>Search, open, print, and export finalized sales invoices.</p></div>
-          <button className="ghost-button" onClick={() => exportRows('plant-zone-invoices', flattenInvoiceRows(filtered), 'csv')}><Download size={17} /> Export CSV</button>
-        </div>
-        <div className="filter-grid invoice-archive-filters">
-          <label>Date<input type="date" value={filters.date} onChange={(event) => setFilters({ ...filters, date: event.target.value })} /></label>
-          <label>Customer<input value={filters.customer} onChange={(event) => setFilters({ ...filters, customer: event.target.value })} placeholder="Search customer" /></label>
-          <label>Status<select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All statuses</option>{paymentStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+          <div><h2>Invoice Archive</h2><p>Recent invoices stay compact. Open more to browse invoices by date.</p></div>
         </div>
         <div className="invoice-archive-list">
-          {filtered.map((invoice) => (
-            <button className={`invoice-row ${selected?.id === invoice.id ? 'active' : ''}`} key={invoice.id} onClick={() => setSelectedId(invoice.id)}>
-              <span><strong>{invoice.invoice_no}</strong><small>{invoice.sale_date} · {invoice.customer.cus_name}</small></span>
-              <span><strong>{money(invoice.sale_amount)}</strong><small>{invoice.payment_status}</small></span>
-            </button>
+          {previewInvoices.map((invoice) => (
+            <InvoiceArchiveRow invoice={invoice} selected={selected?.id === invoice.id} onSelect={() => setSelectedId(invoice.id)} onDelete={() => deleteInvoice(invoice)} key={invoice.id} />
           ))}
-          {!filtered.length && <div className="empty-state">No invoices match these filters.</div>}
+          {!previewInvoices.length && <div className="empty-state">No invoices yet.</div>}
         </div>
+        {sortedInvoices.length > 4 && <button className="ghost-button wide invoice-more-button" onClick={() => setShowMore((current) => !current)}>{showMore ? 'Show less' : 'More'}</button>}
+        {showMore && (
+          <div className="invoice-more-panel">
+            <div className="filter-grid invoice-archive-filters">
+              <label>Date<input type="date" value={filters.date} onChange={(event) => setFilters({ ...filters, date: event.target.value })} /></label>
+              <label>Customer<input value={filters.customer} onChange={(event) => setFilters({ ...filters, customer: event.target.value })} placeholder="Search customer" /></label>
+              <label>Status<select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All statuses</option>{paymentStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+            </div>
+            <div className="invoice-date-groups">
+              {Object.entries(groupedInvoices).map(([date, dateInvoices]) => (
+                <section className="invoice-date-group" key={date}>
+                  <h3>{date}</h3>
+                  <div className="invoice-archive-list">
+                    {dateInvoices.map((invoice) => (
+                      <InvoiceArchiveRow invoice={invoice} selected={selected?.id === invoice.id} onSelect={() => setSelectedId(invoice.id)} onDelete={() => deleteInvoice(invoice)} key={invoice.id} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+              {!filtered.length && <div className="empty-state">No invoices match these filters.</div>}
+            </div>
+          </div>
+        )}
       </div>
-      <InvoiceDetail invoice={selected} onEdit={() => {}} onDelete={() => {}} readOnly />
+      <InvoiceDetail invoice={selected} onEdit={null} onDelete={() => selected && deleteInvoice(selected)} />
     </section>
+  );
+}
+
+function InvoiceArchiveRow({ invoice, selected, onSelect, onDelete }) {
+  return (
+    <article className={`invoice-row invoice-card-row ${selected ? 'active' : ''}`}>
+      <button type="button" onClick={onSelect}>
+        <span><strong>{invoice.invoice_no}</strong><small>{invoice.sale_date} - {invoice.customer.cus_name}</small></span>
+        <span><strong>{money(invoice.sale_amount)}</strong><small>{invoice.payment_status}</small></span>
+      </button>
+      <button type="button" className="icon-button danger invoice-row-delete" onClick={onDelete} aria-label={`Delete ${invoice.invoice_no}`}><Trash2 size={16} /></button>
+    </article>
   );
 }
 
@@ -1481,10 +1523,10 @@ function InvoiceDetail({ invoice, onEdit, onDelete, readOnly = false }) {
           <p>{invoice.sale_date} - {invoice.payment_method}</p>
         </div>
         <div className="invoice-actions">
-          {!readOnly && <button className="ghost-button" onClick={() => onEdit(invoice)}><Edit3 size={17} /> Edit</button>}
+          {!readOnly && onEdit && <button className="ghost-button" onClick={() => onEdit(invoice)}><Edit3 size={17} /> Edit</button>}
           <button className="ghost-button" onClick={() => window.print()}><Printer size={17} /> Print</button>
           <button className="ghost-button" onClick={() => shareText(`${invoice.invoice_no} - ${invoice.customer.cus_name} - ${money(invoice.sale_amount)}`)}><Send size={17} /> Share</button>
-          {!readOnly && <button className="ghost-button danger" onClick={() => onDelete(invoice.id)}><Trash2 size={17} /> Delete</button>}
+          {!readOnly && onDelete && <button className="ghost-button danger" onClick={() => onDelete(invoice.id)}><Trash2 size={17} /> Delete</button>}
         </div>
       </div>
       <div className="invoice-workspace">
@@ -2097,16 +2139,6 @@ function ExportCenterPage({ rows, invoices }) {
           <FileSpreadsheet size={22} />
           <strong>All Sales Excel</strong>
           <span>{rows.length} item rows</span>
-        </button>
-        <button className="export-tile" onClick={() => exportRows('plant-zone-all-sales', rows, 'csv')}>
-          <Download size={22} />
-          <strong>All Sales CSV</strong>
-          <span>Spreadsheet-ready CSV</span>
-        </button>
-        <button className="export-tile" onClick={() => window.print()}>
-          <Printer size={22} />
-          <strong>PDF / Print</strong>
-          <span>{invoices.length} invoice records</span>
         </button>
       </div>
     </section>
