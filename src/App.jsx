@@ -485,7 +485,8 @@ function App() {
     if (item.group === 'Reports') return canViewReports;
     if (item.id === 'stock') return hasPermission(currentUser, 'manage_inventory');
     if (item.id === 'settings') return Boolean(currentUser);
-    return hasPermission(currentUser, 'manage_sales');
+    if (['pos', 'sales', 'invoices', 'customers'].includes(item.id)) return hasPermission(currentUser, 'manage_sales');
+    return false;
   });
 
   const rows = useMemo(() => flattenInvoiceRows(invoices), [invoices]);
@@ -619,7 +620,7 @@ function App() {
           />
         )}
         {activePage === 'invoices' && <InvoiceArchivePage invoices={invoices} setInvoices={setInvoices} plants={plants} customers={customers} logAudit={logAudit} />}
-        {activePage === 'stock' && <StockPage plants={plants} setPlants={setPlants} adjustments={saleAdjustments} history={inventoryHistory} setHistory={setInventoryHistory} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} currentUser={currentUser} logAudit={logAudit} />}
+        {activePage === 'stock' && <StockPage plants={plants} setPlants={setPlants} adjustments={saleAdjustments} setAdjustments={setSaleAdjustments} history={inventoryHistory} setHistory={setInventoryHistory} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} currentUser={currentUser} logAudit={logAudit} />}
         {activePage === 'customers' && (
           <CustomersPage
             customers={customers}
@@ -1795,7 +1796,7 @@ function InvoiceDetail({ invoice, onEdit, onDelete, readOnly = false }) {
   );
 }
 
-function StockPage({ plants, setPlants, adjustments = [], history, setHistory, isFormOpen, setIsFormOpen, currentUser, logAudit }) {
+function StockPage({ plants, setPlants, adjustments = [], setAdjustments, history, setHistory, isFormOpen, setIsFormOpen, currentUser, logAudit }) {
   const emptyPlant = { plant_name: '', plant_code: '', plant_type: 'Indoor', size: 'M', quantity: 0, unit_price: 0, ws_price: 0, low_stock_limit: 5, image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=800&q=80' };
   const [draft, setDraft] = useState(emptyPlant);
   const [editingId, setEditingId] = useState(null);
@@ -1809,7 +1810,13 @@ function StockPage({ plants, setPlants, adjustments = [], history, setHistory, i
   }), { units: 0, value: 0, lowStock: 0 }), [plants]);
   const outOfStockPlants = plants.filter((plant) => Number(plant.quantity || 0) === 0);
   const lowStockPlants = plants.filter((plant) => Number(plant.quantity || 0) > 0 && Number(plant.quantity || 0) <= Number(plant.low_stock_limit || 0));
-  const damagedRecords = adjustments.filter((item) => item.process_group === 'damage' || item.type === 'Damaged plant return' || item.type === 'Plant damage');
+  const damagedRecords = adjustments.filter((item) => (
+    Number(item.damaged_delta || 0) > 0
+    || Number(item.written_off_delta || 0) > 0
+    || item.process_group === 'damage'
+    || item.type === 'Damaged plant return'
+    || item.type === 'Plant damage'
+  ));
   const filteredPlants = useMemo(() => plants.filter((plant) => {
     const minPrice = filters.minPrice === '' ? null : Number(filters.minPrice);
     const maxPrice = filters.maxPrice === '' ? null : Number(filters.maxPrice);
@@ -1863,6 +1870,82 @@ function StockPage({ plants, setPlants, adjustments = [], history, setHistory, i
     setDraft(plant);
     setEditingId(plant.id);
     setIsFormOpen(true);
+  };
+
+  const clearConditionStock = (plant, condition) => {
+    const isDamaged = condition === 'damaged';
+    const field = isDamaged ? 'damaged_quantity' : 'written_off_quantity';
+    const deltaField = isDamaged ? 'damaged_delta' : 'written_off_delta';
+    const removedField = isDamaged ? 'damaged_removed' : 'written_off_removed';
+    const label = isDamaged ? 'Damaged stock' : 'Written-off stock';
+    const quantity = Number(plant[field] || 0);
+    if (quantity <= 0 || !window.confirm(`Remove all ${quantity} ${label.toLowerCase()} unit(s) for ${plant.plant_name}?`)) return;
+
+    const clearedAt = new Date().toISOString();
+    setPlants((current) => current.map((item) => (
+      String(item.id) === String(plant.id) ? { ...item, [field]: 0, updated_at: today() } : item
+    )));
+    setAdjustments((current) => current.map((item) => (
+      String(item.plant_id) === String(plant.id) && Number(item[deltaField] || 0) > 0 && !item[removedField]
+        ? { ...item, [removedField]: true, condition_removed_at: clearedAt, condition_removed_by: currentUser.name }
+        : item
+    )));
+    setHistory((current) => [{
+      id: Date.now() + Math.random(),
+      date: clearedAt,
+      plant_name: plant.plant_name,
+      plant_code: plant.plant_code,
+      balance_type: label,
+      before_quantity: quantity,
+      after_quantity: 0,
+      reason: `${label} cleared`,
+      user_name: currentUser.name,
+    }, ...current]);
+    logAudit({ action: `${label} cleared`, target: plant.plant_name, detail: `${quantity} -> 0; future records remain independent` });
+  };
+
+  const removeConditionRecord = (record) => {
+    const damagedQuantity = record.damaged_removed ? 0 : Number(record.damaged_delta || 0);
+    const writtenOffQuantity = record.written_off_removed ? 0 : Number(record.written_off_delta || 0);
+    if (damagedQuantity <= 0 && writtenOffQuantity <= 0) return;
+    if (!window.confirm(`Remove this condition stock entry for ${record.plant_name}? The history record will be kept.`)) return;
+
+    const removedAt = new Date().toISOString();
+    setPlants((current) => current.map((plant) => (
+      String(plant.id) === String(record.plant_id)
+        ? {
+          ...plant,
+          damaged_quantity: Math.max(0, Number(plant.damaged_quantity || 0) - damagedQuantity),
+          written_off_quantity: Math.max(0, Number(plant.written_off_quantity || 0) - writtenOffQuantity),
+          updated_at: today(),
+        }
+        : plant
+    )));
+    setAdjustments((current) => current.map((item) => (
+      item.id === record.id
+        ? {
+          ...item,
+          damaged_removed: damagedQuantity > 0 || item.damaged_removed,
+          written_off_removed: writtenOffQuantity > 0 || item.written_off_removed,
+          condition_removed_at: removedAt,
+          condition_removed_by: currentUser.name,
+        }
+        : item
+    )));
+    const removedLabel = damagedQuantity > 0 ? 'Damaged stock' : 'Written-off stock';
+    const removedQuantity = damagedQuantity + writtenOffQuantity;
+    setHistory((current) => [{
+      id: Date.now() + Math.random(),
+      date: removedAt,
+      plant_name: record.plant_name,
+      plant_code: record.plant_code,
+      balance_type: removedLabel,
+      before_quantity: removedQuantity,
+      after_quantity: 0,
+      reason: `Condition entry removed: ${record.reason || record.outcome || 'Recorded adjustment'}`,
+      user_name: currentUser.name,
+    }, ...current]);
+    logAudit({ action: 'Condition stock entry removed', target: record.plant_name, detail: `${removedQuantity} unit(s); record ${record.id}` });
   };
 
   const uploadPlantImage = (event) => {
@@ -1924,8 +2007,8 @@ function StockPage({ plants, setPlants, adjustments = [], history, setHistory, i
                 </dl>
                 {hasConditionStock && (
                   <div className="stock-condition-metrics" aria-label={`Condition stock for ${plant.plant_name}`}>
-                    {damagedQuantity > 0 && <span className="stock-condition-badge damaged"><TriangleAlert size={14} /> Damaged <strong>{damagedQuantity}</strong></span>}
-                    {writtenOffQuantity > 0 && <span className="stock-condition-badge written-off"><X size={14} /> Written off <strong>{writtenOffQuantity}</strong></span>}
+                    {damagedQuantity > 0 && <span className="stock-condition-badge damaged"><TriangleAlert size={14} /> Damaged <strong>{damagedQuantity}</strong><button type="button" onClick={() => clearConditionStock(plant, 'damaged')} aria-label={`Clear damaged stock for ${plant.plant_name}`}>Clear</button></span>}
+                    {writtenOffQuantity > 0 && <span className="stock-condition-badge written-off"><X size={14} /> Written off <strong>{writtenOffQuantity}</strong><button type="button" onClick={() => clearConditionStock(plant, 'written-off')} aria-label={`Clear written-off stock for ${plant.plant_name}`}>Clear</button></span>}
                   </div>
                 )}
               </div>
@@ -1963,23 +2046,30 @@ function StockPage({ plants, setPlants, adjustments = [], history, setHistory, i
         <h3>Stock in/out history</h3>
         <div className="mini-history">
           {history.map((entry) => (
-            <span key={entry.id}>{String(entry.date).slice(0, 10)} - {entry.plant_name} - {entry.before_quantity ?? '-'} {'->'} {entry.after_quantity ?? entry.quantity ?? '-'} - {entry.reason || entry.type} - {entry.user_name || 'System'}</span>
+            <span key={entry.id}>{String(entry.date).slice(0, 10)} - {entry.plant_name} - {entry.balance_type || 'Available stock'}: {entry.before_quantity ?? '-'} {'->'} {entry.after_quantity ?? entry.quantity ?? '-'} - {entry.reason || entry.type} - {entry.user_name || 'System'}</span>
           ))}
         </div>
       </footer>
       <section className="panel reveal damaged-stock-panel">
         <div className="panel-title-row">
-          <div><h3>Damaged Plant Records</h3><p>Damage properties recorded from the Sales stock process.</p></div>
-          <span className="status-pill">{damagedRecords.reduce((sum, item) => sum + Number(item.quantity || 0), 0)} units</span>
+          <div><h3>Damaged & Written-off Records</h3><p>Remove a condition entry from current stock without deleting its audit history.</p></div>
+          <span className="status-pill">{damagedRecords.reduce((sum, item) => sum + (item.damaged_removed ? 0 : Number(item.damaged_delta || 0)) + (item.written_off_removed ? 0 : Number(item.written_off_delta || 0)), 0)} active units</span>
         </div>
         <div className="damaged-stock-list">
-          {damagedRecords.map((item) => (
-            <article key={item.id}>
-              <TriangleAlert size={18} />
-              <div><strong>{item.plant_name}</strong><span>{item.plant_code} · {item.quantity} unit(s) · {item.date}</span><p>{item.reason}</p></div>
-              <b>{item.outcome || item.stock_action || 'Recorded'}</b>
-            </article>
-          ))}
+          {damagedRecords.map((item) => {
+            const hasActiveConditionStock = (Number(item.damaged_delta || 0) > 0 && !item.damaged_removed) || (Number(item.written_off_delta || 0) > 0 && !item.written_off_removed);
+            const wasRemoved = (Number(item.damaged_delta || 0) > 0 && item.damaged_removed) || (Number(item.written_off_delta || 0) > 0 && item.written_off_removed);
+            return (
+              <article key={item.id} className={wasRemoved && !hasActiveConditionStock ? 'condition-record-removed' : ''}>
+                <TriangleAlert size={18} />
+                <div><strong>{item.plant_name}</strong><span>{item.plant_code} · {item.quantity} unit(s) · {item.date}</span><p>{item.reason}</p></div>
+                <div className="condition-record-action">
+                  <b>{item.outcome || item.stock_action || 'Recorded'}</b>
+                  {hasActiveConditionStock ? <button className="ghost-button danger" type="button" onClick={() => removeConditionRecord(item)}><Trash2 size={14} /> Remove stock</button> : wasRemoved ? <span>Stock removed</span> : null}
+                </div>
+              </article>
+            );
+          })}
           {!damagedRecords.length && <div className="empty-state">No damaged plants have been recorded.</div>}
         </div>
       </section>
@@ -2390,7 +2480,7 @@ function SettingsPage({ users, setUsers, currentUser, auditLogs, logAudit, onLog
               <label>Display name<input placeholder="Shown inside the app" value={userDraft.name} onChange={(event) => setUserDraft({ ...userDraft, name: event.target.value })} /></label>
               <label>Login username<input placeholder="Used on the login page" value={userDraft.username} onChange={(event) => setUserDraft({ ...userDraft, username: event.target.value })} /></label>
               <label>Temporary password<input type="password" value={userDraft.password} onChange={(event) => setUserDraft({ ...userDraft, password: event.target.value })} /></label>
-              <label>Role<select value={userDraft.role} onChange={(event) => setUserDraft({ ...userDraft, role: event.target.value, can_view_reports: event.target.value !== 'staff' })}><option value="staff">Staff</option><option value="inventory_manager">Inventory Manager</option><option value="admin">Admin</option></select></label>
+              <label>Role<select value={userDraft.role} onChange={(event) => setUserDraft({ ...userDraft, role: event.target.value, can_view_reports: event.target.value !== 'staff' })}><option value="staff">Staff</option><option value="inventory_manager">Inventory Manager (Stock + Sales)</option><option value="admin">Admin</option></select></label>
               <button className="primary-button" onClick={addUser}><Plus size={17} /> Add user</button>
             </div>
             <div className="user-management-list">

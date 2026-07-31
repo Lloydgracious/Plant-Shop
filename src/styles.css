@@ -2354,6 +2354,23 @@ textarea {
   line-height: 1;
 }
 
+.stock-condition-badge button {
+  min-height: 24px;
+  margin-left: 2px;
+  padding: 0 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.64);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.stock-condition-badge button:hover {
+  background: #fff;
+}
+
 .stock-condition-badge.damaged {
   color: #765600;
   border-color: #efd38c;
@@ -2970,7 +2987,7 @@ textarea {
 
 .damaged-stock-list article {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr minmax(150px, auto);
   gap: 12px;
   align-items: start;
   padding: 13px;
@@ -2985,6 +3002,46 @@ textarea {
   margin: 3px 0 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+.condition-record-action {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  text-align: right;
+}
+
+.condition-record-action .ghost-button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(185, 58, 50, 0.24);
+  font-size: 11px;
+}
+
+.condition-record-action > span {
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: #ecefeb;
+  font-weight: 850;
+}
+
+.damaged-stock-list article.condition-record-removed {
+  opacity: 0.72;
+  background: #f5f6f4;
+}
+
+@media (max-width: 720px) {
+  .damaged-stock-list article {
+    grid-template-columns: auto 1fr;
+  }
+
+  .condition-record-action {
+    grid-column: 2;
+    justify-items: start;
+    text-align: left;
+  }
 }
 
 .clickable-card {
