@@ -1905,7 +1905,11 @@ function StockPage({ plants, setPlants, adjustments = [], history, setHistory, i
           </div>
           <div className="stock-result-note">{filteredPlants.length} of {plants.length} plants shown</div>
         <div className="stock-card-grid">
-          {filteredPlants.map((plant) => (
+          {filteredPlants.map((plant) => {
+            const damagedQuantity = Number(plant.damaged_quantity || 0);
+            const writtenOffQuantity = Number(plant.written_off_quantity || 0);
+            const hasConditionStock = damagedQuantity > 0 || writtenOffQuantity > 0;
+            return (
             <article key={plant.id} className={`stock-card ${plant.quantity <= plant.low_stock_limit ? 'low-stock-card' : ''} ${Number(plant.quantity) === 0 ? 'out-stock-card' : ''}`}>
               <img src={plant.image || emptyPlant.image} alt={plant.plant_name} onError={(event) => { event.currentTarget.src = emptyPlant.image; }} />
               <div className="stock-card-main">
@@ -1914,10 +1918,16 @@ function StockPage({ plants, setPlants, adjustments = [], history, setHistory, i
                   <span>{plant.plant_code}</span>
                 </div>
                 <dl className="stock-card-metrics">
-                  <div><dt>Qty</dt><dd>{plant.quantity}</dd></div>
+                  <div><dt>Available</dt><dd>{plant.quantity}</dd></div>
                   <div><dt>Original Cost</dt><dd>{money(plant.ws_price)}</dd></div>
                   <div><dt>Selling Price</dt><dd>{money(plant.unit_price)}</dd></div>
                 </dl>
+                {hasConditionStock && (
+                  <div className="stock-condition-metrics" aria-label={`Condition stock for ${plant.plant_name}`}>
+                    {damagedQuantity > 0 && <span className="stock-condition-badge damaged"><TriangleAlert size={14} /> Damaged <strong>{damagedQuantity}</strong></span>}
+                    {writtenOffQuantity > 0 && <span className="stock-condition-badge written-off"><X size={14} /> Written off <strong>{writtenOffQuantity}</strong></span>}
+                  </div>
+                )}
               </div>
               <div className="stock-card-side">
                 <span className={Number(plant.quantity) === 0 ? 'status-out' : plant.quantity <= plant.low_stock_limit ? 'status-low' : 'status-in'}>{Number(plant.quantity) === 0 ? 'Out of stock' : plant.quantity <= plant.low_stock_limit ? 'Low stock' : 'In stock'}</span>
@@ -1944,7 +1954,8 @@ function StockPage({ plants, setPlants, adjustments = [], history, setHistory, i
                 <span><Package size={14} /> {plant.plant_type} / Size {plant.size}</span>
               </div>
             </article>
-          ))}
+            );
+          })}
           {filteredPlants.length === 0 && <div className="empty-state">No plants match these filters.</div>}
         </div>
       </div>
