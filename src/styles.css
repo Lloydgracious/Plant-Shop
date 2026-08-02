@@ -2696,65 +2696,37 @@ textarea {
 .invoice-leaf-corner {
   position: absolute;
   pointer-events: none;
-  opacity: 0.62;
-}
-
-.invoice-leaf-corner::before,
-.invoice-leaf-corner::after {
-  position: absolute;
-  content: "";
-  border-radius: 100% 0;
-  background: linear-gradient(135deg, rgba(79, 116, 61, 0.62), rgba(151, 176, 125, 0.28));
-  box-shadow:
-    28px 18px 0 -4px rgba(90, 129, 69, 0.5),
-    58px 36px 0 -8px rgba(119, 153, 91, 0.42),
-    86px 54px 0 -12px rgba(80, 116, 62, 0.36);
+  user-select: none;
+  z-index: 0;
 }
 
 .invoice-leaf-corner.top {
-  top: -10px;
-  right: 14px;
-  width: 230px;
-  height: 210px;
-  transform: rotate(25deg);
+  top: 0;
+  right: 0;
+  width: min(45%, 430px);
+  height: auto;
+  opacity: 0.86;
 }
 
-.invoice-leaf-corner.top::before {
-  top: 18px;
-  right: 24px;
-  width: 34px;
-  height: 66px;
+.invoice-leaf-corner.bottom-left {
+  left: -22px;
+  bottom: -2px;
+  width: min(23%, 210px);
+  height: auto;
+  opacity: 0.92;
 }
 
-.invoice-leaf-corner.top::after {
-  top: 86px;
-  right: 88px;
-  width: 28px;
-  height: 56px;
-  transform: rotate(58deg);
+.invoice-leaf-corner.bottom-right {
+  right: 8px;
+  bottom: 164px;
+  width: min(13%, 118px);
+  height: auto;
+  opacity: 0.8;
 }
 
-.invoice-leaf-corner.bottom {
-  left: -26px;
-  bottom: 30px;
-  width: 170px;
-  height: 190px;
-  transform: rotate(-32deg);
-}
-
-.invoice-leaf-corner.bottom::before {
-  left: 40px;
-  bottom: 44px;
-  width: 38px;
-  height: 76px;
-}
-
-.invoice-leaf-corner.bottom::after {
-  left: 86px;
-  bottom: 82px;
-  width: 28px;
-  height: 56px;
-  transform: rotate(52deg);
+.shop-invoice > :not(.invoice-leaf-corner) {
+  position: relative;
+  z-index: 1;
 }
 
 .shop-invoice-head {

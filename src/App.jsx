@@ -33,6 +33,9 @@ import {
 } from 'lucide-react';
 import { readAppState, writeAppState } from './database';
 import { isSupabaseConfigured } from './supabaseClient';
+import invoiceLeavesTopRight from './assets/invoice-leaves-top-right.png';
+import invoicePlantBottomLeft from './assets/invoice-plant-bottom-left.png';
+import invoiceLeavesBottomRight from './assets/invoice-leaves-bottom-right.png';
 
 const sources = ['Facebook', 'TikTok', 'Viber', 'Phone'];
 const paymentStatuses = ['Paid', 'Pending', 'Partial'];
@@ -1768,8 +1771,9 @@ function InvoiceDetail({ invoice, onEdit, onDelete, readOnly = false }) {
       </div>
       <div className="invoice-workspace">
         <div className="shop-invoice">
-          <div className="invoice-leaf-corner top" aria-hidden="true" />
-          <div className="invoice-leaf-corner bottom" aria-hidden="true" />
+          <img className="invoice-leaf-corner top" src={invoiceLeavesTopRight} alt="" aria-hidden="true" />
+          <img className="invoice-leaf-corner bottom-left" src={invoicePlantBottomLeft} alt="" aria-hidden="true" />
+          <img className="invoice-leaf-corner bottom-right" src={invoiceLeavesBottomRight} alt="" aria-hidden="true" />
           <div className="shop-invoice-head">
             <div className="invoice-brand">
               <span className="invoice-brand-mark">PZ</span>
