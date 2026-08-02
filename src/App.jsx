@@ -271,15 +271,13 @@ function createSession(userId) {
 }
 
 function readSession() {
-  const session = readStoredJson(localStorage, storageKeys.session)
-    || readStoredJson(sessionStorage, storageKeys.session);
+  const session = readStoredJson(sessionStorage, storageKeys.session);
   return session?.expiresAt > Date.now() ? session : null;
 }
 
 function saveSession(userId) {
   const session = createSession(userId);
   writeStoredJson(sessionStorage, storageKeys.session, session);
-  writeStoredJson(localStorage, storageKeys.session, session);
   removeStoredValue(sessionStorage, storageKeys.legacySessionUser);
   removeStoredValue(localStorage, storageKeys.legacySessionUser);
   return session.userId;
@@ -405,9 +403,7 @@ async function verifyPassword(password, storedHash) {
 }
 
 function usePersistentState(key, initialValue) {
-  const [state, setState] = useState(() => {
-    return readStoredJson(localStorage, key, initialValue);
-  });
+  const [state, setState] = useState(initialValue);
   const [databaseLoaded, setDatabaseLoaded] = useState(!isSupabaseConfigured);
 
   useEffect(() => {
@@ -421,7 +417,6 @@ function usePersistentState(key, initialValue) {
         if (!isMounted) return;
         if (databaseValue !== null) {
           setState(databaseValue);
-          writeStoredJson(localStorage, key, databaseValue);
         }
       } catch (error) {
         console.error(`Could not load ${key} from Supabase`, error);
@@ -438,7 +433,6 @@ function usePersistentState(key, initialValue) {
   }, [key]);
 
   useEffect(() => {
-    writeStoredJson(localStorage, key, state);
     if (!databaseLoaded || !isSupabaseConfigured) return;
 
     const saveTimer = window.setTimeout(() => {
