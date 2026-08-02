@@ -41,6 +41,7 @@ const sources = ['Facebook', 'TikTok', 'Viber', 'Phone'];
 const paymentStatuses = ['Paid', 'Pending', 'Partial'];
 const saleStages = ['Preparing', 'On the way', 'Confirmed'];
 const plantTypes = ['Indoor', 'Outdoor', 'Succulent', 'Cactus', 'Flowers', 'Decorative', 'Garden Center', 'Landscaping'];
+const expenseCategories = ['General cost', 'Salary', 'Delivery cost', 'Packaging'];
 
 const heroPlantImages = {
   pos: 'https://upload.wikimedia.org/wikipedia/commons/5/5a/Crassula_ovata_700.jpg',
@@ -50,6 +51,7 @@ const heroPlantImages = {
   customers: 'https://upload.wikimedia.org/wikipedia/commons/6/6d/Pilea_peperomioides_Chinese_money_plant.jpg',
   daily: 'https://upload.wikimedia.org/wikipedia/commons/b/b9/Haworthia_cymbiformis_1.jpg',
   monthly: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/Senecio_rowleyanus.jpg',
+  expenses: 'https://upload.wikimedia.org/wikipedia/commons/a/a1/Peperomia_obtusifolia_2.jpg',
   export: 'https://upload.wikimedia.org/wikipedia/commons/e/e2/Dracaena_sanderiana_2.jpg',
   settings: 'https://upload.wikimedia.org/wikipedia/commons/3/3f/A_potted_aloe_vera_plant.jpg',
 };
@@ -204,6 +206,7 @@ const navItems = [
   { id: 'customers', label: 'Customers', icon: Users, group: 'Selling' },
   { id: 'daily', label: 'Daily Data', icon: CalendarDays, group: 'Reports' },
   { id: 'monthly', label: 'Monthly Data', icon: BarChart3, group: 'Reports' },
+  { id: 'expenses', label: 'Expenses', icon: Banknote, group: 'Reports' },
   { id: 'export', label: 'Export Center', icon: FileOutput, group: 'Reports' },
   { id: 'settings', label: 'Settings', icon: Settings, group: 'System' },
 ];
@@ -521,6 +524,7 @@ function App() {
   const [customers, setCustomers] = usePersistentState('plant-zone-customers', sampleCustomers);
   const [invoices, setInvoices] = usePersistentState('plant-zone-invoices', sampleInvoices);
   const [saleAdjustments, setSaleAdjustments] = usePersistentState('plant-zone-sale-adjustments', []);
+  const [expenses, setExpenses] = usePersistentState('plant-zone-expenses', []);
   const [users, setUsers] = usePersistentState('plant-zone-users', defaultUsers);
   const [auditLogs, setAuditLogs] = usePersistentState('plant-zone-audit-logs', defaultAuditLogs);
   const [inventoryHistory, setInventoryHistory] = usePersistentState('plant-zone-stock-history', defaultInventoryHistory);
@@ -580,7 +584,7 @@ function App() {
   }, [currentUser?.username, sessionUserId]);
 
   useEffect(() => {
-    if (!canViewReports && ['daily', 'monthly', 'export'].includes(activePage)) setActivePage('pos');
+    if (!canViewReports && ['daily', 'monthly', 'expenses', 'export'].includes(activePage)) setActivePage('pos');
   }, [activePage, canViewReports]);
 
   useEffect(() => {
@@ -677,8 +681,9 @@ function App() {
             logAudit={logAudit}
           />
         )}
-        {activePage === 'daily' && <DailyDataPage rows={rows} />}
-        {activePage === 'monthly' && <MonthlyDataPage rows={rows} invoices={invoices} />}
+        {activePage === 'daily' && <DailyDataPage rows={rows} expenses={expenses} />}
+        {activePage === 'monthly' && <MonthlyDataPage rows={rows} invoices={invoices} expenses={expenses} />}
+        {activePage === 'expenses' && <ExpensesPage expenses={expenses} setExpenses={setExpenses} logAudit={logAudit} currentUser={currentUser} />}
         {activePage === 'export' && <ExportCenterPage rows={rows} invoices={invoices} />}
         {activePage === 'settings' && <SettingsPage users={users} setUsers={setUsers} currentUser={currentUser} auditLogs={auditLogs} logAudit={logAudit} onLogout={() => { logAudit({ action: 'User logout', target: currentUser.username, detail: `${currentUser.name} signed out` }); handleLogout(); }} />}
       </main>
@@ -2307,25 +2312,144 @@ function CustomersPage({ customers, setCustomers, invoices, isFormOpen, setIsFor
   );
 }
 
-function DailyDataPage({ rows }) {
+function ExpensesPage({ expenses, setExpenses, logAudit, currentUser }) {
+  const [draft, setDraft] = useState({ date: today(), category: 'General cost', description: '', amount: '' });
+  const [filters, setFilters] = useState({ month: monthNow(), category: '' });
+  const [formError, setFormError] = useState('');
+  const filteredExpenses = expenses
+    .filter((expense) => String(expense.date || '').startsWith(filters.month))
+    .filter((expense) => !filters.category || expense.category === filters.category)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const monthExpenses = expenses.filter((expense) => String(expense.date || '').startsWith(filters.month));
+  const totalExpenses = expenseTotalFor(filteredExpenses, () => true);
+  const categoryTotals = expensesByCategory(monthExpenses);
+
+  const saveExpense = () => {
+    const amount = Number(draft.amount);
+    if (!draft.date || !expenseCategories.includes(draft.category) || !Number.isFinite(amount) || amount <= 0) {
+      setFormError(appError('Choose a date, category, and amount greater than zero.', 'VALIDATION_ERROR').message);
+      return;
+    }
+    const expense = {
+      id: Date.now() + Math.random(),
+      date: draft.date,
+      category: draft.category,
+      description: String(draft.description || '').trim(),
+      amount,
+      created_at: new Date().toISOString(),
+      user_name: currentUser?.name || 'System',
+    };
+    setExpenses((current) => [expense, ...current]);
+    logAudit?.({ action: 'Expense added', target: expense.category, detail: `${money(amount)} on ${expense.date}` });
+    setDraft({ date: today(), category: 'General cost', description: '', amount: '' });
+    setFormError('');
+  };
+
+  const deleteExpense = (expense) => {
+    setExpenses((current) => current.filter((item) => item.id !== expense.id));
+    logAudit?.({ action: 'Expense deleted', target: expense.category, detail: `${money(expense.amount)} on ${expense.date}` });
+  };
+
+  return (
+    <section className="expenses-page">
+      <div className="summary-grid reveal">
+        <MetricCard label="Selected expenses" value={money(totalExpenses)} detail={filters.category || 'All categories'} />
+        {categoryTotals.map((item) => (
+          <MetricCard key={item.category} label={item.category} value={money(item.total)} />
+        ))}
+      </div>
+
+      <section className="panel reveal">
+        <div className="panel-title-row">
+          <div><h2>Expenses</h2><p>Add costs that reduce daily and monthly net profit.</p></div>
+        </div>
+        <div className="form-grid expense-form">
+          {formError && <p className="login-error span-2" role="alert">{formError}</p>}
+          <label>Date<input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label>
+          <label>Category<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>{expenseCategories.map((category) => <option key={category}>{category}</option>)}</select></label>
+          <label>Description<input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="Optional note" /></label>
+          <label>Amount (Ks)<input type="number" min="0" value={draft.amount} onChange={(event) => setDraft({ ...draft, amount: event.target.value })} /></label>
+          <button className="primary-button" onClick={saveExpense}><Plus size={17} /> Add expense</button>
+        </div>
+      </section>
+
+      <section className="panel reveal">
+        <div className="panel-title-row report-title-row">
+          <div><h2>Expense List</h2><p>Filter by month and category.</p></div>
+        </div>
+        <div className="filter-grid expense-filters">
+          <label>Month<input type="month" value={filters.month} onChange={(event) => setFilters({ ...filters, month: event.target.value })} /></label>
+          <label>Category<select value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}><option value="">All</option>{expenseCategories.map((category) => <option key={category}>{category}</option>)}</select></label>
+        </div>
+        <div className="table-wrap expense-table">
+          <table>
+            <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th>By</th><th></th></tr></thead>
+            <tbody>
+              {filteredExpenses.map((expense) => (
+                <tr key={expense.id}>
+                  <td>{expense.date}</td>
+                  <td>{expense.category}</td>
+                  <td>{expense.description || '-'}</td>
+                  <td>{money(expense.amount)}</td>
+                  <td>{expense.user_name || '-'}</td>
+                  <td><button className="icon-button danger" onClick={() => deleteExpense(expense)} aria-label={`Delete ${expense.category} expense`}><Trash2 size={16} /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!filteredExpenses.length && <div className="empty-state">No expenses match the current filters.</div>}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function expenseTotalFor(expenses, predicate) {
+  return expenses
+    .filter(predicate)
+    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+}
+
+function expensesByCategory(expenses) {
+  return expenseCategories.map((category) => ({
+    category,
+    total: expenses
+      .filter((expense) => expense.category === category)
+      .reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
+  }));
+}
+
+function DailyDataPage({ rows, expenses }) {
   const [filters, setFilters] = useState({ date: today(), type: '', source: '', search: '' });
   const filtered = filterRows(rows, filters, 'day');
+  const totalSales = filtered.reduce((sum, row) => sum + Number(row.sale_amount || 0), 0);
+  const grossProfit = filtered.reduce((sum, row) => sum + Number(row.profit || 0), 0);
+  const totalExpenses = expenseTotalFor(expenses, (expense) => expense.date === filters.date);
+  const netProfit = grossProfit - totalExpenses;
   return (
     <ReportPage
       title="Daily Data List"
-      description="All sale rows for the selected day."
+      description="All sale rows for the selected day, with expenses deducted from profit."
       rows={filtered}
       filters={filters}
       setFilters={setFilters}
       mode="day"
       filename="plant-zone-daily-data"
+      summary={{
+        'Total sales': money(totalSales),
+        'Gross profit': money(grossProfit),
+        Expenses: money(totalExpenses),
+        'Net profit': money(netProfit),
+        'Item rows': filtered.length,
+      }}
     />
   );
 }
 
-function MonthlyDataPage({ rows, invoices }) {
+function MonthlyDataPage({ rows, invoices, expenses }) {
   const [filters, setFilters] = useState({ month: monthNow(), type: '', source: '', search: '' });
   const filtered = filterRows(rows, filters, 'month');
+  const monthlyExpenses = expenses.filter((expense) => String(expense.date || '').startsWith(filters.month));
   const invoiceIds = new Set(filtered.map((row) => row.invoice_no));
   const sourceTotals = sources.map((source) => ({
     source,
@@ -2334,14 +2458,18 @@ function MonthlyDataPage({ rows, invoices }) {
   const bestPlant = bestBy(filtered, 'plant_name');
   const topSource = sourceTotals.slice().sort((a, b) => b.total - a.total)[0]?.source || '-';
   const totalSales = filtered.reduce((sum, row) => sum + row.sale_amount, 0);
-  const totalProfit = filtered.reduce((sum, row) => sum + row.profit, 0);
+  const grossProfit = filtered.reduce((sum, row) => sum + row.profit, 0);
+  const totalExpenses = expenseTotalFor(monthlyExpenses, () => true);
+  const netProfit = grossProfit - totalExpenses;
   const monthlyInvoices = invoices.filter((invoice) => invoice.sale_date.startsWith(filters.month));
 
   return (
     <section className="report-layout">
       <div className="summary-grid reveal">
         <MetricCard label="Total sales" value={money(totalSales)} />
-        <MetricCard label="Total profit" value={money(totalProfit)} />
+        <MetricCard label="Gross profit" value={money(grossProfit)} />
+        <MetricCard label="Expenses" value={money(totalExpenses)} />
+        <MetricCard label="Net profit" value={money(netProfit)} />
         <MetricCard label="Invoice count" value={invoiceIds.size || monthlyInvoices.length} />
         <MetricCard label="Best-selling plant" value={bestPlant || '-'} />
         <MetricCard label="Top source" value={topSource} />
@@ -2373,7 +2501,9 @@ function MonthlyDataPage({ rows, invoices }) {
         filename="plant-zone-monthly-data"
         summary={{
           'Total sales': money(totalSales),
-          'Total profit': money(totalProfit),
+          'Gross profit': money(grossProfit),
+          Expenses: money(totalExpenses),
+          'Net profit': money(netProfit),
           'Invoice count': invoiceIds.size || monthlyInvoices.length,
           'Best-selling plant': bestPlant || '-',
           'Top source': topSource,
