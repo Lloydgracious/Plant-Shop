@@ -2322,6 +2322,7 @@ function ExpensesPage({ expenses, setExpenses, logAudit, currentUser }) {
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const monthExpenses = expenses.filter((expense) => String(expense.date || '').startsWith(filters.month));
   const totalExpenses = expenseTotalFor(filteredExpenses, () => true);
+  const monthTotal = expenseTotalFor(monthExpenses, () => true);
   const categoryTotals = expensesByCategory(monthExpenses);
 
   const saveExpense = () => {
@@ -2352,52 +2353,68 @@ function ExpensesPage({ expenses, setExpenses, logAudit, currentUser }) {
 
   return (
     <section className="expenses-page">
-      <div className="summary-grid reveal">
-        <MetricCard label="Selected expenses" value={money(totalExpenses)} detail={filters.category || 'All categories'} />
-        {categoryTotals.map((item) => (
-          <MetricCard key={item.category} label={item.category} value={money(item.total)} />
-        ))}
-      </div>
-
-      <section className="panel reveal">
-        <div className="panel-title-row">
-          <div><h2>Expenses</h2><p>Add costs that reduce daily and monthly net profit.</p></div>
+      <section className="expense-overview reveal">
+        <div className="expense-overview-main">
+          <span>Monthly expenses</span>
+          <strong>{money(monthTotal)}</strong>
+          <small>{filters.month} - affects net profit in daily and monthly reports</small>
         </div>
-        <div className="form-grid expense-form">
-          {formError && <p className="login-error span-2" role="alert">{formError}</p>}
-          <label>Date<input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label>
-          <label>Category<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>{expenseCategories.map((category) => <option key={category}>{category}</option>)}</select></label>
-          <label>Description<input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="Optional note" /></label>
-          <label>Amount (Ks)<input type="number" min="0" value={draft.amount} onChange={(event) => setDraft({ ...draft, amount: event.target.value })} /></label>
-          <button className="primary-button" onClick={saveExpense}><Plus size={17} /> Add expense</button>
+        <div className="expense-category-grid">
+          {categoryTotals.map((item) => (
+            <button
+              key={item.category}
+              className={`expense-category-card ${filters.category === item.category ? 'active' : ''}`}
+              onClick={() => setFilters((current) => ({ ...current, category: current.category === item.category ? '' : item.category }))}
+            >
+              <span>{item.category}</span>
+              <strong>{money(item.total)}</strong>
+            </button>
+          ))}
         </div>
       </section>
 
-      <section className="panel reveal">
-        <div className="panel-title-row report-title-row">
-          <div><h2>Expense List</h2><p>Filter by month and category.</p></div>
+      <section className="expense-workspace">
+        <div className="panel reveal expense-entry-panel">
+          <div className="panel-title-row">
+            <div><h2>Add Expense</h2><p>General cost, salary, delivery, and packaging only.</p></div>
+          </div>
+          <div className="expense-form">
+            {formError && <p className="login-error" role="alert">{formError}</p>}
+            <label>Date<input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label>
+            <label>Category<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>{expenseCategories.map((category) => <option key={category}>{category}</option>)}</select></label>
+            <label>Description<input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="Optional note" /></label>
+            <label>Amount (Ks)<input type="number" min="0" value={draft.amount} onChange={(event) => setDraft({ ...draft, amount: event.target.value })} /></label>
+            <button className="primary-button wide" onClick={saveExpense}><Plus size={17} /> Add expense</button>
+          </div>
         </div>
-        <div className="filter-grid expense-filters">
-          <label>Month<input type="month" value={filters.month} onChange={(event) => setFilters({ ...filters, month: event.target.value })} /></label>
-          <label>Category<select value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}><option value="">All</option>{expenseCategories.map((category) => <option key={category}>{category}</option>)}</select></label>
-        </div>
-        <div className="table-wrap expense-table">
-          <table>
-            <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th>By</th><th></th></tr></thead>
-            <tbody>
-              {filteredExpenses.map((expense) => (
-                <tr key={expense.id}>
-                  <td>{expense.date}</td>
-                  <td>{expense.category}</td>
-                  <td>{expense.description || '-'}</td>
-                  <td>{money(expense.amount)}</td>
-                  <td>{expense.user_name || '-'}</td>
-                  <td><button className="icon-button danger" onClick={() => deleteExpense(expense)} aria-label={`Delete ${expense.category} expense`}><Trash2 size={16} /></button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!filteredExpenses.length && <div className="empty-state">No expenses match the current filters.</div>}
+
+        <div className="panel reveal expense-list-panel">
+          <div className="panel-title-row report-title-row">
+            <div><h2>Expense List</h2><p>{filters.category || 'All categories'} - {money(totalExpenses)}</p></div>
+            <label className="compact-month">Month<input type="month" value={filters.month} onChange={(event) => setFilters({ ...filters, month: event.target.value })} /></label>
+          </div>
+          <div className="expense-filter-chips">
+            <button className={`chip ${!filters.category ? 'active' : ''}`} onClick={() => setFilters({ ...filters, category: '' })}>All</button>
+            {expenseCategories.map((category) => (
+              <button key={category} className={`chip ${filters.category === category ? 'active' : ''}`} onClick={() => setFilters({ ...filters, category })}>{category}</button>
+            ))}
+          </div>
+          <div className="expense-list">
+            {filteredExpenses.map((expense) => (
+              <article className="expense-row" key={expense.id}>
+                <div className="expense-row-main">
+                  <span className="expense-category-pill">{expense.category}</span>
+                  <strong>{expense.description || expense.category}</strong>
+                  <small>{expense.date} - Added by {expense.user_name || 'System'}</small>
+                </div>
+                <div className="expense-row-side">
+                  <b>{money(expense.amount)}</b>
+                  <button className="icon-button danger" onClick={() => deleteExpense(expense)} aria-label={`Delete ${expense.category} expense`}><Trash2 size={16} /></button>
+                </div>
+              </article>
+            ))}
+            {!filteredExpenses.length && <div className="empty-state">No expenses match the current filters.</div>}
+          </div>
         </div>
       </section>
     </section>

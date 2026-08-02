@@ -3814,6 +3814,178 @@ td {
   color: var(--danger) !important;
 }
 
+.expenses-page {
+  display: grid;
+  gap: 14px;
+}
+
+.expense-overview {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.48fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.expense-overview-main,
+.expense-category-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--small-shadow);
+}
+
+.expense-overview-main {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  padding: 18px;
+  color: var(--forest-dark);
+  background:
+    linear-gradient(135deg, rgba(46, 125, 50, 0.12), rgba(247, 180, 51, 0.1)),
+    rgba(255, 255, 255, 0.96);
+}
+
+.expense-overview-main span,
+.expense-category-card span,
+.expense-category-pill {
+  color: var(--olive);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.expense-overview-main strong {
+  color: var(--forest-dark);
+  font-size: clamp(1.7rem, 4vw, 2.5rem);
+  line-height: 1;
+}
+
+.expense-overview-main small {
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.expense-category-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.expense-category-card {
+  display: grid;
+  gap: 8px;
+  min-height: 106px;
+  padding: 14px;
+  text-align: left;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.expense-category-card:hover,
+.expense-category-card.active {
+  transform: translateY(-2px);
+  border-color: rgba(46, 125, 50, 0.35);
+  box-shadow: 0 14px 32px rgba(31, 47, 36, 0.11);
+}
+
+.expense-category-card.active {
+  background: #eef8ef;
+}
+
+.expense-category-card strong {
+  color: var(--forest-dark);
+  font-size: 1.15rem;
+  line-height: 1.05;
+}
+
+.expense-workspace {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.38fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.expense-entry-panel {
+  position: sticky;
+  top: 18px;
+}
+
+.expense-form {
+  display: grid;
+  gap: 10px;
+}
+
+.expense-list-panel .panel-title-row {
+  align-items: center;
+}
+
+.compact-month {
+  min-width: 180px;
+}
+
+.expense-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.expense-list {
+  display: grid;
+  gap: 10px;
+}
+
+.expense-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #fff, #fbfcfa);
+}
+
+.expense-row-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.expense-category-pill {
+  width: max-content;
+  max-width: 100%;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: var(--forest-dark);
+  background: #eaf4eb;
+}
+
+.expense-row-main strong {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.expense-row-main small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.expense-row-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.expense-row-side b {
+  color: var(--forest-dark);
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
 .settings-grid input {
   background: #fff;
 }
@@ -4035,6 +4207,15 @@ td {
   .invoice-builder {
     position: static;
   }
+
+  .expense-overview,
+  .expense-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .expense-entry-panel {
+    position: static;
+  }
 }
 
 @media (max-width: 1180px) {
@@ -4167,6 +4348,10 @@ td {
   .stock-filter-bar .ghost-button {
     width: 100%;
   }
+
+  .expense-category-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -4293,6 +4478,24 @@ td {
   .customer-card-footer {
     flex-direction: column;
     gap: 8px;
+  }
+
+  .expense-category-grid,
+  .expense-row {
+    grid-template-columns: 1fr;
+  }
+
+  .expense-row-side {
+    justify-content: space-between;
+  }
+
+  .expense-list-panel .panel-title-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compact-month {
+    min-width: 0;
   }
 
   .invoice-modal .invoice-form,
