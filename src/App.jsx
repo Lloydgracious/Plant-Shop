@@ -231,6 +231,67 @@ const rolePermissions = {
   staff: ['manage_sales'],
 };
 
+const storageKeys = {
+  session: 'plant-zone-session',
+  legacySessionUser: 'plant-zone-session-user',
+};
+
+function readStoredJson(storage, key, fallback = null) {
+  try {
+    const stored = storage?.getItem(key);
+    return stored ? JSON.parse(stored) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredJson(storage, key, value) {
+  try {
+    storage?.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    console.warn(`Could not save ${key} to browser storage`, error);
+    return false;
+  }
+}
+
+function removeStoredValue(storage, key) {
+  try {
+    storage?.removeItem(key);
+  } catch {
+    // Ignore unavailable browser storage.
+  }
+}
+
+function createSession(userId) {
+  return {
+    userId: String(userId),
+    expiresAt: Date.now() + SESSION_DURATION_MS,
+  };
+}
+
+function readSession() {
+  const session = readStoredJson(localStorage, storageKeys.session)
+    || readStoredJson(sessionStorage, storageKeys.session);
+  return session?.expiresAt > Date.now() ? session : null;
+}
+
+function saveSession(userId) {
+  const session = createSession(userId);
+  writeStoredJson(sessionStorage, storageKeys.session, session);
+  writeStoredJson(localStorage, storageKeys.session, session);
+  removeStoredValue(sessionStorage, storageKeys.legacySessionUser);
+  removeStoredValue(localStorage, storageKeys.legacySessionUser);
+  return session.userId;
+}
+
+function clearSession() {
+  removeStoredValue(sessionStorage, storageKeys.session);
+  removeStoredValue(localStorage, storageKeys.session);
+  removeStoredValue(sessionStorage, storageKeys.legacySessionUser);
+  removeStoredValue(localStorage, storageKeys.legacySessionUser);
+}
+
 const defaultAuditLogs = [
   {
     id: 1,
@@ -345,12 +406,7 @@ async function verifyPassword(password, storedHash) {
 
 function usePersistentState(key, initialValue) {
   const [state, setState] = useState(() => {
-    try {
-      const stored = localStorage.getItem(key);
-      return stored ? JSON.parse(stored) : initialValue;
-    } catch {
-      return initialValue;
-    }
+    return readStoredJson(localStorage, key, initialValue);
   });
   const [databaseLoaded, setDatabaseLoaded] = useState(!isSupabaseConfigured);
 
@@ -365,7 +421,7 @@ function usePersistentState(key, initialValue) {
         if (!isMounted) return;
         if (databaseValue !== null) {
           setState(databaseValue);
-          localStorage.setItem(key, JSON.stringify(databaseValue));
+          writeStoredJson(localStorage, key, databaseValue);
         }
       } catch (error) {
         console.error(`Could not load ${key} from Supabase`, error);
@@ -382,7 +438,7 @@ function usePersistentState(key, initialValue) {
   }, [key]);
 
   useEffect(() => {
-    localStorage.setItem(key, JSON.stringify(state));
+    writeStoredJson(localStorage, key, state);
     if (!databaseLoaded || !isSupabaseConfigured) return;
 
     const saveTimer = window.setTimeout(() => {
@@ -437,7 +493,7 @@ function LoginPage({ users, setUsers, onLogin, onAudit }) {
       target: user.username,
       detail: `${roleLabels[user.role] || user.role} signed in`,
     });
-    onLogin(String(user.id));
+    onLogin(user.id);
     setBusy(false);
   };
 
@@ -471,14 +527,7 @@ function App() {
   const [users, setUsers] = usePersistentState('plant-zone-users', defaultUsers);
   const [auditLogs, setAuditLogs] = usePersistentState('plant-zone-audit-logs', defaultAuditLogs);
   const [inventoryHistory, setInventoryHistory] = usePersistentState('plant-zone-stock-history', defaultInventoryHistory);
-  const [sessionUserId, setSessionUserId] = useState(() => {
-    try {
-      const session = JSON.parse(sessionStorage.getItem('plant-zone-session') || 'null');
-      return session?.expiresAt > Date.now() ? String(session.userId) : '';
-    } catch {
-      return '';
-    }
-  });
+  const [sessionUserId, setSessionUserId] = useState(() => readSession()?.userId || '');
   const currentUser = users.find((user) => String(user.id) === String(sessionUserId) && user.active);
   const canViewReports = Boolean(currentUser && (hasPermission(currentUser, 'view_reports') || currentUser.can_view_reports));
   const visibleNavItems = navItems.filter((item) => {
@@ -500,35 +549,34 @@ function App() {
       detail: entry.detail || '',
     }, ...current].slice(0, 500));
   };
+  const handleLogin = (userId) => {
+    setSessionUserId(saveSession(userId));
+  };
+  const handleLogout = () => {
+    clearSession();
+    setSessionUserId('');
+    setActivePage('pos');
+  };
 
   useEffect(() => {
     if (sessionUserId) {
-      sessionStorage.setItem('plant-zone-session', JSON.stringify({
-        userId: sessionUserId,
-        expiresAt: Date.now() + SESSION_DURATION_MS,
-      }));
-      sessionStorage.removeItem('plant-zone-session-user');
+      saveSession(sessionUserId);
     } else {
-      sessionStorage.removeItem('plant-zone-session');
-      sessionStorage.removeItem('plant-zone-session-user');
+      clearSession();
     }
   }, [sessionUserId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      try {
-        const session = JSON.parse(sessionStorage.getItem('plant-zone-session') || 'null');
-        if (sessionUserId && (!session?.expiresAt || session.expiresAt <= Date.now())) {
-          logAudit({
-            action: 'Session expired',
-            target: currentUser?.username || 'Session',
-            detail: 'Automatic logout after inactivity window',
-          });
-          setSessionUserId('');
-          setActivePage('pos');
-        }
-      } catch {
+      const session = readSession();
+      if (sessionUserId && !session) {
+        logAudit({
+          action: 'Session expired',
+          target: currentUser?.username || 'Session',
+          detail: 'Automatic logout after inactivity window',
+        });
         setSessionUserId('');
+        setActivePage('pos');
       }
     }, 60000);
     return () => window.clearInterval(timer);
@@ -553,7 +601,7 @@ function App() {
   const todayRows = useMemo(() => rows.filter((row) => row.date === today()), [rows]);
   const monthlyRows = useMemo(() => rows.filter((row) => row.date.startsWith(monthNow())), [rows]);
 
-  if (!currentUser) return <LoginPage users={users} setUsers={setUsers} onLogin={setSessionUserId} onAudit={logAudit} />;
+  if (!currentUser) return <LoginPage users={users} setUsers={setUsers} onLogin={handleLogin} onAudit={logAudit} />;
 
   return (
     <div className="app-shell">
@@ -635,7 +683,7 @@ function App() {
         {activePage === 'daily' && <DailyDataPage rows={rows} />}
         {activePage === 'monthly' && <MonthlyDataPage rows={rows} invoices={invoices} />}
         {activePage === 'export' && <ExportCenterPage rows={rows} invoices={invoices} />}
-        {activePage === 'settings' && <SettingsPage users={users} setUsers={setUsers} currentUser={currentUser} auditLogs={auditLogs} logAudit={logAudit} onLogout={() => { logAudit({ action: 'User logout', target: currentUser.username, detail: `${currentUser.name} signed out` }); setSessionUserId(''); setActivePage('pos'); }} />}
+        {activePage === 'settings' && <SettingsPage users={users} setUsers={setUsers} currentUser={currentUser} auditLogs={auditLogs} logAudit={logAudit} onLogout={() => { logAudit({ action: 'User logout', target: currentUser.username, detail: `${currentUser.name} signed out` }); handleLogout(); }} />}
       </main>
     </div>
   );
