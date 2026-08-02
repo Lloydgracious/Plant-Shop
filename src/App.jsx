@@ -1750,6 +1750,8 @@ function InvoiceDetail({ invoice, onEdit, onDelete, readOnly = false }) {
   if (!invoice) return <div className="panel empty-state">No invoices yet.</div>;
   const paidAmount = Number(invoice.paid_amount ?? (invoice.payment_status === 'Paid' ? invoice.sale_amount : 0));
   const balanceAmount = Math.max(0, Number(invoice.sale_amount || 0) - paidAmount);
+  const grossAmount = Number(invoice.gross_total ?? (Number(invoice.subtotal || 0) + Number(invoice.discount_amount || 0)));
+  const discountAmount = Number(invoice.discount_amount || 0);
   return (
     <aside className="panel reveal invoice-detail printable">
       <div className="invoice-action-bar">
@@ -1766,41 +1768,37 @@ function InvoiceDetail({ invoice, onEdit, onDelete, readOnly = false }) {
       </div>
       <div className="invoice-workspace">
         <div className="shop-invoice">
+          <div className="invoice-leaf-corner top" aria-hidden="true" />
+          <div className="invoice-leaf-corner bottom" aria-hidden="true" />
           <div className="shop-invoice-head">
-            <div>
-              <span className="invoice-brand-mark"><Leaf size={20} /></span>
-              <h2>Plant Zone Garden Center</h2>
-              <p>Pyay, Bago Region</p>
-              <p>+95 9 756 040646</p>
-            </div>
-            <div className="invoice-stamp">
-              <span>Invoice</span>
-              <strong>{invoice.invoice_no}</strong>
-              <small>{invoice.sale_date}</small>
-              <b className={`invoice-payment-badge ${clean(invoice.payment_status)}`}>{invoice.payment_status}</b>
+            <div className="invoice-brand">
+              <span className="invoice-brand-mark">PZ</span>
+              <h2>Plant Zone</h2>
+              <p>Garden Center</p>
             </div>
           </div>
+          <h1 className="invoice-title">Invoice</h1>
           <div className="invoice-info-grid">
             <section className="invoice-party">
-              <span className="invoice-section-label">Bill to</span>
+              <span className="invoice-section-label">Invoice To :</span>
               <strong>{invoice.customer.cus_name}</strong>
               <p>{invoice.customer.cus_ph || 'No phone provided'}</p>
               <p>{invoice.customer.cus_address || 'No address provided'}</p>
             </section>
             <section className="invoice-reference">
-              <span className="invoice-section-label">Invoice details</span>
-              <p><b>Invoice:</b> {invoice.invoice_no}</p>
-              <p><b>Date:</b> {invoice.sale_date}</p>
+              <p><b>Invoice No :</b> {invoice.invoice_no}</p>
+              <p><b>Date :</b> {invoice.sale_date}</p>
+              <b className={`invoice-payment-badge ${clean(invoice.payment_status)}`}>{invoice.payment_status}</b>
             </section>
           </div>
+          <div className="invoice-divider" aria-hidden="true"><span /></div>
           <div className="invoice-table-wrap">
             <table className="shop-invoice-table">
-              <thead><tr><th>Item</th><th>Code</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
+              <thead><tr><th>Items</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
               <tbody>
                 {invoice.items.map((item) => (
                   <tr key={`${invoice.id}-${item.plant_code}`}>
                     <td><strong>{item.plant_name}</strong><small>{item.plant_type} / Size {item.size}</small></td>
-                    <td>{item.plant_code}</td>
                     <td>{item.quantity}</td>
                     <td>{money(item.unit_price)}</td>
                     <td>{money(item.sale_amount)}</td>
@@ -1809,18 +1807,20 @@ function InvoiceDetail({ invoice, onEdit, onDelete, readOnly = false }) {
               </tbody>
             </table>
           </div>
+          <section className="invoice-total-card">
+            <dl>
+              <div><dt>Sub-total:</dt><dd>{money(grossAmount)}</dd></div>
+              {discountAmount > 0 && <div><dt>Discount:</dt><dd>- {money(discountAmount)}</dd></div>}
+              <div className="invoice-final-total"><dt>Items:</dt><dd>{money(invoice.sale_amount)}</dd></div>
+            </dl>
+          </section>
           <div className="invoice-bottom">
-            <div className="invoice-note">
-              <strong>Thank you for shopping with Plant Zone.</strong>
-              <p>Customer source: {invoice.customer.source || 'Walk-in'}</p>
-              <p>Please keep this invoice for your records.</p>
+            <div className="invoice-note invoice-payment-to">
+              <strong>Payment to :</strong>
+              <p><span>Shop name</span><b>Plant Zone Garden Center</b></p>
+              <p><span>Location</span><b>Pyay, Bago Region</b></p>
             </div>
             <div className="invoice-settlement">
-              <Totals totals={{
-                gross: invoice.gross_total ?? (Number(invoice.subtotal || 0) + Number(invoice.discount_amount || 0)),
-                discount: invoice.discount_amount || 0,
-                total: invoice.sale_amount,
-              }} />
               <section className="invoice-payment-summary">
                 <span className="invoice-section-label">Payment details</span>
                 <dl>
@@ -1830,8 +1830,14 @@ function InvoiceDetail({ invoice, onEdit, onDelete, readOnly = false }) {
                   <div className={balanceAmount > 0 ? 'balance-due' : ''}><dt>Balance due</dt><dd>{money(balanceAmount)}</dd></div>
                 </dl>
               </section>
+              <section className="invoice-contact">
+                <p>+95 9 756 040646</p>
+                <p>Plant Zone Garden Center</p>
+                <p>Customer source: {invoice.customer.source || 'Walk-in'}</p>
+              </section>
             </div>
           </div>
+          <p className="invoice-thanks">Thank you for your business!</p>
         </div>
       </div>
     </aside>
