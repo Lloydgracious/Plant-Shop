@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   BadgeDollarSign,
@@ -411,6 +411,7 @@ async function verifyPassword(password, storedHash) {
 function usePersistentState(key, initialValue) {
   const [state, setState] = useState(initialValue);
   const [databaseLoaded, setDatabaseLoaded] = useState(!isSupabaseConfigured);
+  const hasLocalChanges = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -439,10 +440,12 @@ function usePersistentState(key, initialValue) {
   }, [key]);
 
   useEffect(() => {
-    if (!databaseLoaded || !isSupabaseConfigured) return;
+    if (!databaseLoaded || !isSupabaseConfigured || !hasLocalChanges.current) return;
 
     const saveTimer = window.setTimeout(() => {
-      writeAppState(key, state).catch((error) => {
+      writeAppState(key, state).then(() => {
+        hasLocalChanges.current = false;
+      }).catch((error) => {
         console.error(`Could not save ${key} to Supabase`, error);
       });
     }, 350);
@@ -450,7 +453,12 @@ function usePersistentState(key, initialValue) {
     return () => window.clearTimeout(saveTimer);
   }, [databaseLoaded, key, state]);
 
-  return [state, setState];
+  const setPersistentState = useCallback((value) => {
+    hasLocalChanges.current = true;
+    setState(value);
+  }, []);
+
+  return [state, setPersistentState];
 }
 
 function LoginPage({ users, setUsers, onLogin, onAudit }) {
