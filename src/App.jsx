@@ -206,8 +206,8 @@ const navItems = [
   { id: 'customers', label: 'Customers', icon: Users, group: 'Selling' },
   { id: 'daily', label: 'Daily Data', icon: CalendarDays, group: 'Reports' },
   { id: 'monthly', label: 'Monthly Data', icon: BarChart3, group: 'Reports' },
-  { id: 'expenses', label: 'Expenses', icon: Banknote, group: 'Reports' },
   { id: 'export', label: 'Export Center', icon: FileOutput, group: 'Reports' },
+  { id: 'expenses', label: 'Expenses', icon: Banknote, group: 'Expenses' },
   { id: 'settings', label: 'Settings', icon: Settings, group: 'System' },
 ];
 
@@ -541,6 +541,7 @@ function App() {
   const canViewReports = Boolean(currentUser && (hasPermission(currentUser, 'view_reports') || currentUser.can_view_reports));
   const visibleNavItems = navItems.filter((item) => {
     if (item.group === 'Reports') return canViewReports;
+    if (item.group === 'Expenses') return hasPermission(currentUser, 'manage_inventory');
     if (item.id === 'stock') return hasPermission(currentUser, 'manage_inventory');
     if (item.id === 'settings') return Boolean(currentUser);
     if (['pos', 'sales', 'invoices', 'customers'].includes(item.id)) return hasPermission(currentUser, 'manage_sales');
@@ -592,7 +593,7 @@ function App() {
   }, [currentUser?.username, sessionUserId]);
 
   useEffect(() => {
-    if (!canViewReports && ['daily', 'monthly', 'expenses', 'export'].includes(activePage)) setActivePage('pos');
+    if (!canViewReports && ['daily', 'monthly', 'export'].includes(activePage)) setActivePage('pos');
   }, [activePage, canViewReports]);
 
   useEffect(() => {
@@ -623,7 +624,7 @@ function App() {
           </div>
         </div>
         <nav className="nav-list" aria-label="Main navigation">
-          {['Selling', 'Reports', 'System'].map((group) => (
+          {['Selling', 'Reports', 'Expenses', 'System'].map((group) => (
             visibleNavItems.some((item) => item.group === group) && <React.Fragment key={group}>
               <div className="nav-label">{group}</div>
               {visibleNavItems.filter((item) => item.group === group).map((item) => {
