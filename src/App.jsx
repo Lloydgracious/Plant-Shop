@@ -657,6 +657,7 @@ function App() {
             rows={todayRows}
             invoices={invoices}
             monthlyRows={monthlyRows}
+            expenses={expenses}
           />
         )}
         {activePage === 'sales' && (
@@ -743,11 +744,15 @@ function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, 
   );
 }
 
-function DashboardPage({ plants, rows, invoices, monthlyRows }) {
+function DashboardPage({ plants, rows, invoices, monthlyRows, expenses }) {
   const todaySales = rows.reduce((sum, row) => sum + row.sale_amount, 0);
   const monthlySales = monthlyRows.reduce((sum, row) => sum + row.sale_amount, 0);
   const todayProfit = rows.reduce((sum, row) => sum + row.profit, 0);
   const monthlyProfit = monthlyRows.reduce((sum, row) => sum + row.profit, 0);
+  const todayExpenses = expenseTotalFor(expenses, (expense) => expense.date === today());
+  const monthlyExpenses = expenseTotalFor(expenses, (expense) => String(expense.date || '').startsWith(monthNow()));
+  const todayNetProfit = todayProfit - todayExpenses;
+  const monthlyNetProfit = monthlyProfit - monthlyExpenses;
   const invoiceCount = new Set(rows.map((row) => row.invoice_no)).size;
   const lowStockPlants = plants.filter((plant) => plant.quantity <= plant.low_stock_limit);
   const stockUnits = plants.reduce((sum, plant) => sum + Number(plant.quantity || 0), 0);
@@ -765,8 +770,11 @@ function DashboardPage({ plants, rows, invoices, monthlyRows }) {
     <section className="dashboard-page">
       <div className="summary-grid reveal">
         <MetricCard icon={<Banknote size={18} />} label="Today Sales" value={money(todaySales)} detail={`${invoiceCount} invoices today`} />
-        <MetricCard icon={<TrendingUp size={18} />} label="Monthly Sales" value={money(monthlySales)} detail={`${money(monthlyProfit)} profit`} />
-        <MetricCard icon={<BadgeDollarSign size={18} />} label="Today Profit" value={money(todayProfit)} detail="Selling price minus original cost" />
+        <MetricCard icon={<ReceiptText size={18} />} label="Today Expenses" value={money(todayExpenses)} detail="Costs recorded today" />
+        <MetricCard icon={<BadgeDollarSign size={18} />} label="Today Net Profit" value={money(todayNetProfit)} detail={`${money(todayProfit)} gross profit`} />
+        <MetricCard icon={<TrendingUp size={18} />} label="Monthly Sales" value={money(monthlySales)} detail={`${money(monthlyProfit)} gross profit`} />
+        <MetricCard icon={<ReceiptText size={18} />} label="Monthly Expenses" value={money(monthlyExpenses)} detail="Costs recorded this month" />
+        <MetricCard icon={<BadgeDollarSign size={18} />} label="Monthly Net Profit" value={money(monthlyNetProfit)} detail="Gross profit minus expenses" />
         <MetricCard icon={<Package size={18} />} label="Stock Value" value={money(stockValue)} detail={`${stockUnits} units in stock`} />
         <MetricCard icon={<TriangleAlert size={18} />} label="Low Stock" value={lowStockPlants.length} detail="Items needing refill" />
       </div>
