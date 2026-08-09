@@ -422,7 +422,7 @@ function usePersistentState(key, initialValue) {
       try {
         const databaseValue = await readAppState(key);
         if (!isMounted) return;
-        if (databaseValue !== null) {
+        if (databaseValue !== null && !hasLocalChanges.current) {
           setState(databaseValue);
         }
       } catch (error) {
@@ -458,7 +458,75 @@ function usePersistentState(key, initialValue) {
     setState(value);
   }, []);
 
-  return [state, setPersistentState];
+  return [state, setPersistentState, databaseLoaded];
+}
+
+const recoveredPlantDefaults = {
+  plant_type: 'Outdoor',
+  size: 'S',
+  unit_price: 0,
+  ws_price: 0,
+  low_stock_limit: 5,
+  damaged_quantity: 0,
+  written_off_quantity: 0,
+  image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=800&q=80',
+};
+
+function plantIdentity(name, code) {
+  return `${clean(name)}|${clean(code)}`;
+}
+
+function recoverPlantsFromHistory(plants, history) {
+  if (!Array.isArray(plants) || !Array.isArray(history)) return [];
+
+  const currentKeys = new Set(plants.map((plant) => plantIdentity(plant.plant_name, plant.plant_code)));
+  const deletedAtByKey = new Map();
+  const historyByKey = new Map();
+
+  history.forEach((entry) => {
+    const key = plantIdentity(entry.plant_name, entry.plant_code);
+    if (!historyByKey.has(key)) historyByKey.set(key, []);
+    historyByKey.get(key).push(entry);
+
+    if (entry.reason === 'Product deleted') {
+      const deletedAt = new Date(entry.date).getTime();
+      deletedAtByKey.set(key, Math.max(deletedAtByKey.get(key) || 0, deletedAt));
+    }
+  });
+
+  const recoveredKeys = new Set();
+  return [...history]
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .reduce((recovered, entry) => {
+      if (entry.reason !== 'New plant created') return recovered;
+
+      const key = plantIdentity(entry.plant_name, entry.plant_code);
+      const createdAt = new Date(entry.date).getTime();
+      if (currentKeys.has(key) || recoveredKeys.has(key) || (deletedAtByKey.get(key) || 0) > createdAt) {
+        return recovered;
+      }
+
+      const relatedHistory = (historyByKey.get(key) || [])
+        .filter((item) => new Date(item.date).getTime() >= createdAt)
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+      const latestEntry = relatedHistory[relatedHistory.length - 1] || entry;
+      const latestQuantityEntry = [...relatedHistory]
+        .reverse()
+        .find((item) => item.after_quantity !== undefined || item.quantity !== undefined) || entry;
+
+      recoveredKeys.add(key);
+      recovered.push({
+        ...recoveredPlantDefaults,
+        id: createdAt + recovered.length,
+        plant_name: entry.plant_name,
+        plant_code: entry.plant_code,
+        quantity: Number(latestQuantityEntry.after_quantity ?? latestQuantityEntry.quantity ?? 0),
+        created_at: String(entry.date).slice(0, 10),
+        updated_at: String(latestEntry.date || entry.date).slice(0, 10),
+        recovered_from_history: true,
+      });
+      return recovered;
+    }, []);
 }
 
 function LoginPage({ users, setUsers, onLogin, onAudit }) {
@@ -528,14 +596,14 @@ function App() {
   const [invoiceListOpen, setInvoiceListOpen] = useState(false);
   const [stockModalOpen, setStockModalOpen] = useState(false);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
-  const [plants, setPlants] = usePersistentState('plant-zone-plants', samplePlants);
+  const [plants, setPlants, plantsLoaded] = usePersistentState('plant-zone-plants', samplePlants);
   const [customers, setCustomers] = usePersistentState('plant-zone-customers', sampleCustomers);
   const [invoices, setInvoices] = usePersistentState('plant-zone-invoices', sampleInvoices);
   const [saleAdjustments, setSaleAdjustments] = usePersistentState('plant-zone-sale-adjustments', []);
   const [expenses, setExpenses] = usePersistentState('plant-zone-expenses', []);
   const [users, setUsers] = usePersistentState('plant-zone-users', defaultUsers);
   const [auditLogs, setAuditLogs] = usePersistentState('plant-zone-audit-logs', defaultAuditLogs);
-  const [inventoryHistory, setInventoryHistory] = usePersistentState('plant-zone-stock-history', defaultInventoryHistory);
+  const [inventoryHistory, setInventoryHistory, inventoryHistoryLoaded] = usePersistentState('plant-zone-stock-history', defaultInventoryHistory);
   const [sessionUserId, setSessionUserId] = useState(() => readSession()?.userId || '');
   const currentUser = users.find((user) => String(user.id) === String(sessionUserId) && user.active);
   const canViewReports = Boolean(currentUser && (hasPermission(currentUser, 'view_reports') || currentUser.can_view_reports));
@@ -549,6 +617,13 @@ function App() {
   });
 
   const rows = useMemo(() => flattenInvoiceRows(invoices), [invoices]);
+  useEffect(() => {
+    if (!plantsLoaded || !inventoryHistoryLoaded) return;
+    const recoveredPlants = recoverPlantsFromHistory(plants, inventoryHistory);
+    if (!recoveredPlants.length) return;
+    setPlants((current) => [...recoveredPlants.reverse(), ...current]);
+  }, [plants, inventoryHistory, plantsLoaded, inventoryHistoryLoaded, setPlants]);
+
   const logAudit = (entry) => {
     setAuditLogs((current) => [{
       id: Date.now() + Math.random(),

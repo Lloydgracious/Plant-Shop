@@ -14,6 +14,8 @@ const backedUpStateKeys = new Set([
   'plant-zone-invoices',
   'plant-zone-plants',
   'plant-zone-sale-adjustments',
+  'plant-zone-stock-history',
+  'plant-zone-audit-logs',
   'plant-zone-users',
 ]);
 
