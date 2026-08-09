@@ -472,6 +472,10 @@ const recoveredPlantDefaults = {
   image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=800&q=80',
 };
 
+function isActivePlant(plant) {
+  return !plant?.deleted_at;
+}
+
 function plantIdentity(name, code) {
   return `${clean(name)}|${clean(code)}`;
 }
@@ -523,6 +527,7 @@ function recoverPlantsFromHistory(plants, history) {
         quantity: Number(latestQuantityEntry.after_quantity ?? latestQuantityEntry.quantity ?? 0),
         created_at: String(entry.date).slice(0, 10),
         updated_at: String(latestEntry.date || entry.date).slice(0, 10),
+        synced_at: latestEntry.date || entry.date,
         recovered_from_history: true,
       });
       return recovered;
@@ -617,6 +622,7 @@ function App() {
   });
 
   const rows = useMemo(() => flattenInvoiceRows(invoices), [invoices]);
+  const activePlants = useMemo(() => plants.filter(isActivePlant), [plants]);
   useEffect(() => {
     if (!plantsLoaded || !inventoryHistoryLoaded) return;
     const recoveredPlants = recoverPlantsFromHistory(plants, inventoryHistory);
@@ -729,7 +735,7 @@ function App() {
         <Header activePage={activePage} onMenu={() => setSidebarOpen(true)} onAddInvoice={() => setInvoiceModalOpen(true)} onShowInvoices={() => setInvoiceListOpen(true)} onAddPlant={() => setStockModalOpen(true)} onAddCustomer={() => setCustomerModalOpen(true)} />
         {activePage === 'pos' && (
           <DashboardPage
-            plants={plants}
+            plants={activePlants}
             rows={todayRows}
             invoices={invoices}
             monthlyRows={monthlyRows}
@@ -740,7 +746,7 @@ function App() {
           <SalesPage
             invoices={invoices}
             setInvoices={setInvoices}
-            plants={plants}
+            plants={activePlants}
             setPlants={setPlants}
             customers={customers}
             isFormOpen={invoiceModalOpen}
@@ -753,8 +759,8 @@ function App() {
             setInventoryHistory={setInventoryHistory}
           />
         )}
-        {activePage === 'invoices' && <InvoiceArchivePage invoices={invoices} setInvoices={setInvoices} plants={plants} customers={customers} logAudit={logAudit} />}
-        {activePage === 'stock' && <StockPage plants={plants} setPlants={setPlants} adjustments={saleAdjustments} setAdjustments={setSaleAdjustments} history={inventoryHistory} setHistory={setInventoryHistory} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} currentUser={currentUser} logAudit={logAudit} />}
+        {activePage === 'invoices' && <InvoiceArchivePage invoices={invoices} setInvoices={setInvoices} plants={activePlants} customers={customers} logAudit={logAudit} />}
+        {activePage === 'stock' && <StockPage plants={activePlants} setPlants={setPlants} adjustments={saleAdjustments} setAdjustments={setSaleAdjustments} history={inventoryHistory} setHistory={setInventoryHistory} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} currentUser={currentUser} logAudit={logAudit} />}
         {activePage === 'customers' && (
           <CustomersPage
             customers={customers}
@@ -990,6 +996,7 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
 
   const updateSaleStage = (invoice, stage) => {
     if (!invoice.stock_deducted) {
+      const syncedAt = new Date().toISOString();
       const historyRows = plants.flatMap((plant) => {
         const soldItem = invoice.items.find((item) => String(item.plant_id) === String(plant.id) || item.plant_code === plant.plant_code);
         if (!soldItem) return [];
@@ -997,7 +1004,7 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
         const afterQuantity = Math.max(0, beforeQuantity - Number(soldItem.quantity || 0));
         return [{
           id: Date.now() + Math.random(),
-          date: new Date().toISOString(),
+          date: syncedAt,
           plant_name: plant.plant_name,
           plant_code: plant.plant_code,
           before_quantity: beforeQuantity,
@@ -1008,7 +1015,7 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
       });
       setPlants((current) => current.map((plant) => {
         const soldItem = invoice.items.find((item) => String(item.plant_id) === String(plant.id) || item.plant_code === plant.plant_code);
-        return soldItem ? { ...plant, quantity: Math.max(0, Number(plant.quantity || 0) - Number(soldItem.quantity || 0)) } : plant;
+        return soldItem ? { ...plant, quantity: Math.max(0, Number(plant.quantity || 0) - Number(soldItem.quantity || 0)), updated_at: today(), synced_at: syncedAt } : plant;
       }));
       if (historyRows.length) setInventoryHistory((history) => [...historyRows, ...history]);
     }
@@ -1031,6 +1038,7 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
   const applyProcess = () => {
     if (!selectedPlant || !processQuantity || !draft.reason.trim()) return;
     const processId = Date.now();
+    const syncedAt = new Date().toISOString();
     const processLabel = processTab === 'return' ? 'Customer return' : 'Plant damage';
     const outcome = processTab === 'return' ? draft.return_condition : draft.damage_result;
     const processRecord = {
@@ -1063,12 +1071,13 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
           damaged_quantity: Math.max(0, Number(plant.damaged_quantity || 0) + stockEffect.damaged),
           written_off_quantity: Math.max(0, Number(plant.written_off_quantity || 0) + stockEffect.writtenOff),
           updated_at: today(),
+          synced_at: syncedAt,
         }
         : plant
     )));
     setInventoryHistory((history) => [{
       id: processId + Math.random(),
-      date: new Date().toISOString(),
+      date: syncedAt,
       plant_name: selectedPlant.plant_name,
       plant_code: selectedPlant.plant_code,
       before_quantity: Number(selectedPlant.quantity || 0),
@@ -1084,6 +1093,7 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
 
   const undoLastProcess = () => {
     if (!processNotice) return;
+    const syncedAt = new Date().toISOString();
     setPlants((current) => current.map((plant) => (
       String(plant.id) === String(processNotice.plant_id)
         ? {
@@ -1091,6 +1101,8 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
           quantity: Math.max(0, Number(plant.quantity || 0) - Number(processNotice.stock_delta || 0)),
           damaged_quantity: Math.max(0, Number(plant.damaged_quantity || 0) - Number(processNotice.damaged_delta || 0)),
           written_off_quantity: Math.max(0, Number(plant.written_off_quantity || 0) - Number(processNotice.written_off_delta || 0)),
+          updated_at: today(),
+          synced_at: syncedAt,
         }
         : plant
     )));
@@ -1729,6 +1741,7 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
       setInvoices((current) => current.map((item) => (item.id === editingId ? invoice : item)));
       logAudit?.({ action: 'Product sale updated', target: invoice.invoice_no, detail: `${invoice.items.length} item(s), ${money(invoice.sale_amount)}` });
     } else {
+      const syncedAt = new Date().toISOString();
       const historyRows = [];
       setPlants?.((current) => current.map((plant) => {
         const soldItem = items.find((item) => String(item.plant_id) === String(plant.id) || item.plant_code === plant.plant_code);
@@ -1737,7 +1750,7 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
         const afterQuantity = Math.max(0, beforeQuantity - Number(soldItem.quantity || 0));
         historyRows.push({
           id: Date.now() + Math.random(),
-          date: new Date().toISOString(),
+          date: syncedAt,
           plant_name: plant.plant_name,
           plant_code: plant.plant_code,
           before_quantity: beforeQuantity,
@@ -1745,7 +1758,7 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
           reason: `Sale: ${invoice.invoice_no}`,
           user_name: currentUser?.name || 'System',
         });
-        return { ...plant, quantity: afterQuantity, updated_at: today() };
+        return { ...plant, quantity: afterQuantity, updated_at: today(), synced_at: syncedAt };
       }));
       if (historyRows.length) setInventoryHistory?.((current) => [...historyRows, ...current]);
       setInvoices((current) => [invoice, ...current]);
@@ -1986,10 +1999,11 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
     const previous = plants.find((plant) => plant.id === editingId);
     const beforeQuantity = Number(previous?.quantity || 0);
     const afterQuantity = Number(draft.quantity || 0);
+    const savedAt = new Date().toISOString();
     if (editingId) {
-      setPlants((current) => current.map((plant) => (plant.id === editingId ? { ...draft, id: editingId, updated_at: today() } : plant)));
+      setPlants((current) => current.map((plant) => (plant.id === editingId ? { ...draft, id: editingId, updated_at: today(), synced_at: savedAt } : plant)));
     } else {
-      setPlants((current) => [{ ...draft, id: Date.now(), created_at: today(), updated_at: today() }, ...current]);
+      setPlants((current) => [{ ...draft, id: Date.now(), created_at: today(), updated_at: today(), synced_at: savedAt }, ...current]);
     }
     setHistory((current) => [{
       id: Date.now() + Math.random(),
@@ -2032,7 +2046,7 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
 
     const clearedAt = new Date().toISOString();
     setPlants((current) => current.map((item) => (
-      String(item.id) === String(plant.id) ? { ...item, [field]: 0, updated_at: today() } : item
+      String(item.id) === String(plant.id) ? { ...item, [field]: 0, updated_at: today(), synced_at: clearedAt } : item
     )));
     setAdjustments((current) => current.map((item) => (
       String(item.plant_id) === String(plant.id) && Number(item[deltaField] || 0) > 0 && !item[removedField]
@@ -2067,6 +2081,7 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
           damaged_quantity: Math.max(0, Number(plant.damaged_quantity || 0) - damagedQuantity),
           written_off_quantity: Math.max(0, Number(plant.written_off_quantity || 0) - writtenOffQuantity),
           updated_at: today(),
+          synced_at: removedAt,
         }
         : plant
     )));
@@ -2166,10 +2181,22 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
                 <div className="stock-card-actions">
                   <button className="ghost-button" onClick={() => editPlant(plant)}><Edit3 size={16} /> Edit</button>
                   <button className="ghost-button danger" onClick={() => {
-                    setPlants((current) => current.filter((item) => item.id !== plant.id));
+                    const deletedAt = new Date().toISOString();
+                    setPlants((current) => current.map((item) => (
+                      item.id === plant.id
+                        ? {
+                          ...item,
+                          quantity: 0,
+                          deleted_at: deletedAt,
+                          deleted_by: currentUser.name,
+                          updated_at: today(),
+                          synced_at: deletedAt,
+                        }
+                        : item
+                    )));
                     setHistory((current) => [{
                       id: Date.now() + Math.random(),
-                      date: new Date().toISOString(),
+                      date: deletedAt,
                       plant_name: plant.plant_name,
                       plant_code: plant.plant_code,
                       before_quantity: Number(plant.quantity || 0),
