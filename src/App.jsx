@@ -241,6 +241,12 @@ const storageKeys = {
   session: 'plant-zone-session',
   legacySessionUser: 'plant-zone-session-user',
 };
+const localStateCachePrefix = 'plant-zone-cache:';
+const locallyCachedStateKeys = new Set(['plant-zone-plants']);
+const maxPlantImageBytes = 180000;
+const maxPlantUploadBytes = 5000000;
+const maxPlantImageDimension = 640;
+const plantImageQuality = 0.74;
 
 function readStoredJson(storage, key, fallback = null) {
   try {
@@ -267,6 +273,16 @@ function removeStoredValue(storage, key) {
   } catch {
     // Ignore unavailable browser storage.
   }
+}
+
+function readStateCache(key, fallback) {
+  if (!locallyCachedStateKeys.has(key)) return fallback;
+  return readStoredJson(localStorage, `${localStateCachePrefix}${key}`, fallback);
+}
+
+function writeStateCache(key, value) {
+  if (!locallyCachedStateKeys.has(key)) return;
+  writeStoredJson(localStorage, `${localStateCachePrefix}${key}`, value);
 }
 
 function createSession(userId) {
@@ -352,7 +368,7 @@ function validatePlant(plant) {
     Number(plant.unit_price) >= 0 ? '' : 'Selling price cannot be negative.',
     Number(plant.ws_price) >= 0 ? '' : 'Original cost cannot be negative.',
     Number(plant.low_stock_limit) >= 0 ? '' : 'Low stock limit cannot be negative.',
-    String(plant.image || '').length <= 700000 ? '' : 'Image is too large. Use an image under about 500 KB.',
+    String(plant.image || '').length <= maxPlantImageBytes ? '' : 'Image is too large. Upload the photo again so it can be optimized.',
   ].filter(Boolean);
   return errors[0] || '';
 }
@@ -383,6 +399,60 @@ function base64ToBytes(value) {
   return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 }
 
+function loadImageElement(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Could not read image file.'));
+    image.src = source;
+  });
+}
+
+async function resizeImageSource(source, maxDimension = maxPlantImageDimension, quality = plantImageQuality) {
+  const image = await loadImageElement(source);
+  const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+  const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+  const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  context.drawImage(image, 0, 0, width, height);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Could not read image file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function optimizePlantImageFile(file) {
+  const original = await readFileAsDataUrl(file);
+  if (typeof original !== 'string') throw new Error('Could not read image file.');
+  return resizeImageSource(original);
+}
+
+async function optimizeOversizedPlantImages(plants) {
+  const updates = await Promise.all(plants.map(async (plant) => {
+    if (typeof plant.image !== 'string' || !plant.image.startsWith('data:image/') || plant.image.length <= maxPlantImageBytes) {
+      return plant;
+    }
+
+    try {
+      const image = await resizeImageSource(plant.image);
+      return image.length < plant.image.length ? { ...plant, image } : plant;
+    } catch {
+      return plant;
+    }
+  }));
+  const changed = updates.some((plant, index) => plant.image !== plants[index]?.image);
+  return changed ? updates : plants;
+}
+
 async function hashPassword(password, salt = crypto.getRandomValues(new Uint8Array(passwordSaltBytes))) {
   const key = await crypto.subtle.importKey(
     'raw',
@@ -409,7 +479,7 @@ async function verifyPassword(password, storedHash) {
 }
 
 function usePersistentState(key, initialValue) {
-  const [state, setState] = useState(initialValue);
+  const [state, setState] = useState(() => readStateCache(key, initialValue));
   const [databaseLoaded, setDatabaseLoaded] = useState(!isSupabaseConfigured);
   const hasLocalChanges = useRef(false);
 
@@ -424,6 +494,7 @@ function usePersistentState(key, initialValue) {
         if (!isMounted) return;
         if (databaseValue !== null && !hasLocalChanges.current) {
           setState(databaseValue);
+          writeStateCache(key, databaseValue);
         }
       } catch (error) {
         console.error(`Could not load ${key} from Supabase`, error);
@@ -455,8 +526,12 @@ function usePersistentState(key, initialValue) {
 
   const setPersistentState = useCallback((value) => {
     hasLocalChanges.current = true;
-    setState(value);
-  }, []);
+    setState((current) => {
+      const nextValue = typeof value === 'function' ? value(current) : value;
+      writeStateCache(key, nextValue);
+      return nextValue;
+    });
+  }, [key]);
 
   return [state, setPersistentState, databaseLoaded];
 }
@@ -629,6 +704,20 @@ function App() {
     if (!recoveredPlants.length) return;
     setPlants((current) => [...recoveredPlants.reverse(), ...current]);
   }, [plants, inventoryHistory, plantsLoaded, inventoryHistoryLoaded, setPlants]);
+
+  useEffect(() => {
+    if (!plantsLoaded || !plants.some((plant) => typeof plant.image === 'string' && plant.image.startsWith('data:image/') && plant.image.length > maxPlantImageBytes)) return;
+    let isMounted = true;
+
+    optimizeOversizedPlantImages(plants).then((optimizedPlants) => {
+      if (!isMounted || optimizedPlants === plants) return;
+      setPlants(optimizedPlants);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [plants, plantsLoaded, setPlants]);
 
   const logAudit = (entry) => {
     setAuditLogs((current) => [{
@@ -1995,6 +2084,7 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
     if (validationError) {
       setFormError(appError(validationError, 'VALIDATION_ERROR').message);
       return;
+  const [imageBusy, setImageBusy] = useState(false);
     }
     const previous = plants.find((plant) => plant.id === editingId);
     const beforeQuantity = Number(previous?.quantity || 0);
@@ -2112,19 +2202,26 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
     logAudit({ action: 'Condition stock entry removed', target: record.plant_name, detail: `${removedQuantity} unit(s); record ${record.id}` });
   };
 
-  const uploadPlantImage = (event) => {
+  const uploadPlantImage = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith('image/') || file.size > 512000) {
-      setFormError(appError('Upload a valid image under 500 KB.', 'FILE_UPLOAD_ERROR').message);
+    if (!file.type.startsWith('image/') || file.size > maxPlantUploadBytes) {
+      setFormError(appError('Upload a valid image under 5 MB.', 'FILE_UPLOAD_ERROR').message);
       event.target.value = '';
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setDraft((current) => ({ ...current, image: reader.result }));
-    };
-    reader.readAsDataURL(file);
+    setImageBusy(true);
+    setFormError('');
+    try {
+      const image = await optimizePlantImageFile(file);
+      setDraft((current) => ({ ...current, image }));
+    } catch (error) {
+      console.error('Could not optimize plant image', error);
+      setFormError(appError('Could not read this image. Try a different photo.', 'FILE_UPLOAD_ERROR').message);
+    } finally {
+      setImageBusy(false);
+      event.target.value = '';
+    }
   };
 
   return (
@@ -2274,11 +2371,11 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
                 Plant image
                 <span className="image-upload-control">
                   <img src={draft.image || emptyPlant.image} alt="Plant preview" onError={(event) => { event.currentTarget.src = emptyPlant.image; }} />
-                  <span>Upload image</span>
+                  <span>{imageBusy ? 'Optimizing...' : 'Upload image'}</span>
                   <input type="file" accept="image/*" onChange={uploadPlantImage} />
                 </span>
               </label>
-              <button className="primary-button span-2" onClick={savePlant}><Plus size={17} /> {editingId ? 'Update plant' : 'Add plant'}</button>
+              <button className="primary-button span-2" onClick={savePlant} disabled={imageBusy}><Plus size={17} /> {editingId ? 'Update plant' : 'Add plant'}</button>
             </div>
           </div>
         </div>
