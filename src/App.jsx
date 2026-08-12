@@ -31,7 +31,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { readAppState, writeAppState } from './database';
+import { readAppState, uploadStorageImage, writeAppState } from './database';
 import { isSupabaseConfigured } from './supabaseClient';
 import invoiceLeavesTopRight from './assets/invoice-leaves-top-right.png';
 import invoicePlantBottomLeft from './assets/invoice-plant-bottom-left.png';
@@ -56,147 +56,10 @@ const heroPlantImages = {
   settings: 'https://upload.wikimedia.org/wikipedia/commons/3/3f/A_potted_aloe_vera_plant.jpg',
 };
 
-const samplePlants = [
-  {
-    id: 1,
-    plant_code: 'PZ-IN-101',
-    plant_name: 'Monstera Deliciosa',
-    plant_type: 'Indoor',
-    size: 'M',
-    quantity: 24,
-    unit_price: 28000,
-    ws_price: 18500,
-    low_stock_limit: 6,
-    image: 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    id: 2,
-    plant_code: 'PZ-OUT-044',
-    plant_name: 'Bougainvillea Basket',
-    plant_type: 'Outdoor',
-    size: 'L',
-    quantity: 16,
-    unit_price: 22000,
-    ws_price: 14000,
-    low_stock_limit: 5,
-    image: 'https://images.unsplash.com/photo-1520412099551-62b6bafeb5bb?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    id: 3,
-    plant_code: 'PZ-SUC-018',
-    plant_name: 'Echeveria Rosette',
-    plant_type: 'Succulent',
-    size: 'S',
-    quantity: 38,
-    unit_price: 8500,
-    ws_price: 4200,
-    low_stock_limit: 10,
-    image: 'https://images.unsplash.com/photo-1459411621453-7b03977f4bfc?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    id: 4,
-    plant_code: 'PZ-CAC-032',
-    plant_name: 'Golden Barrel Cactus',
-    plant_type: 'Cactus',
-    size: 'M',
-    quantity: 11,
-    unit_price: 18000,
-    ws_price: 9500,
-    low_stock_limit: 6,
-    image: 'https://images.unsplash.com/photo-1509587584298-0f3b3a3a1797?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    id: 5,
-    plant_code: 'PZ-FLW-205',
-    plant_name: 'Peace Lily Bloom',
-    plant_type: 'Flowers',
-    size: 'M',
-    quantity: 20,
-    unit_price: 26000,
-    ws_price: 15500,
-    low_stock_limit: 7,
-    image: 'https://images.unsplash.com/photo-1593691509543-c55fb32d8de5?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    id: 6,
-    plant_code: 'PZ-DEC-076',
-    plant_name: 'Lucky Bamboo Vase',
-    plant_type: 'Decorative',
-    size: 'S',
-    quantity: 8,
-    unit_price: 32000,
-    ws_price: 21000,
-    low_stock_limit: 8,
-    image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    id: 7,
-    plant_code: 'PZ-GDN-112',
-    plant_name: 'Ceramic Pot Set',
-    plant_type: 'Garden Center',
-    size: 'Set',
-    quantity: 42,
-    unit_price: 12000,
-    ws_price: 7300,
-    low_stock_limit: 12,
-    image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    id: 8,
-    plant_code: 'PZ-LND-010',
-    plant_name: 'Patio Landscaping Package',
-    plant_type: 'Landscaping',
-    size: 'Order',
-    quantity: 9,
-    unit_price: 180000,
-    ws_price: 122000,
-    low_stock_limit: 3,
-    image: 'https://images.unsplash.com/photo-1558904541-efa843a96f01?auto=format&fit=crop&w=800&q=80',
-  },
-];
-
-const sampleCustomers = [
-  { id: 1, cus_name: 'Daw Hnin', cus_ph: '+95 9 420 111 204', cus_address: 'Pyay downtown', source: 'Facebook', created_at: '2026-07-02', updated_at: '2026-07-02' },
-  { id: 2, cus_name: 'Ko Min', cus_ph: '+95 9 752 190 334', cus_address: 'Nawaday Road', source: 'Viber', created_at: '2026-07-05', updated_at: '2026-07-05' },
-];
-
-const sampleInvoices = [
-  {
-    id: 1,
-    invoice_no: 'PZ-20260708-001',
-    customer: sampleCustomers[0],
-    sale_date: '2026-07-08',
-    payment_status: 'Paid',
-    payment_method: 'Cash',
-    subtotal: 56000,
-    wholesale_total: 37000,
-    profit_total: 19000,
-    sale_amount: 56000,
-    items: [
-      { ...samplePlants[0], quantity: 2, sale_amount: 56000, profit_amount: 19000 },
-    ],
-  },
-  {
-    id: 2,
-    invoice_no: 'PZ-20260707-002',
-    customer: sampleCustomers[1],
-    sale_date: '2026-07-07',
-    payment_status: 'Pending',
-    payment_method: 'Mobile Pay',
-    subtotal: 32000,
-    wholesale_total: 21000,
-    profit_total: 11000,
-    sale_amount: 32000,
-    items: [
-      { ...samplePlants[5], quantity: 1, sale_amount: 32000, profit_amount: 11000 },
-    ],
-  },
-];
-
-const defaultUsers = [
-  { id: 'admin', name: 'Shop Admin', username: 'admin', password: 'admin123', role: 'admin', can_view_reports: true, active: true },
-  { id: 'staff', name: 'Sales Staff', username: 'staff', password: 'staff123', role: 'staff', can_view_reports: false, active: true },
-];
+const emptyPlants = [];
+const emptyCustomers = [];
+const emptyInvoices = [];
+const defaultUsers = [];
 
 const navItems = [
   { id: 'pos', label: 'Dashboard', icon: BarChart3, group: 'Selling' },
@@ -241,12 +104,27 @@ const storageKeys = {
   session: 'plant-zone-session',
   legacySessionUser: 'plant-zone-session-user',
 };
-const localStateCachePrefix = 'plant-zone-cache:';
-const locallyCachedStateKeys = new Set(['plant-zone-plants']);
-const maxPlantImageBytes = 180000;
+const appStorageResetKey = 'plant-zone-ui-clean-reset';
+const appStorageResetVersion = '2026-08-13-clear-all-data';
+const appStateStorageKeys = [
+  'plant-zone-plants',
+  'plant-zone-customers',
+  'plant-zone-invoices',
+  'plant-zone-sale-adjustments',
+  'plant-zone-expenses',
+  'plant-zone-users',
+  'plant-zone-audit-logs',
+  'plant-zone-stock-history',
+  'plant-zone-session',
+  'plant-zone-session-user',
+  'plant-zone-cache:plant-zone-plants',
+];
+const supabaseImageBucket = 'plant-zone-images';
+const maxStoredImageBytes = 250000;
+const maxPlantImageBytes = maxStoredImageBytes;
 const maxPlantUploadBytes = 5000000;
-const maxPlantImageDimension = 640;
-const plantImageQuality = 0.74;
+const maxPlantImageDimension = 900;
+const plantImageQuality = 0.75;
 
 function readStoredJson(storage, key, fallback = null) {
   try {
@@ -275,14 +153,26 @@ function removeStoredValue(storage, key) {
   }
 }
 
+function prepareCleanStorage() {
+  try {
+    if (localStorage.getItem(appStorageResetKey) === appStorageResetVersion) return true;
+    appStateStorageKeys.forEach((key) => {
+      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
+    });
+    localStorage.setItem(appStorageResetKey, appStorageResetVersion);
+  } catch {
+    // Ignore unavailable browser storage.
+  }
+  return true;
+}
+
 function readStateCache(key, fallback) {
-  if (!locallyCachedStateKeys.has(key)) return fallback;
-  return readStoredJson(localStorage, `${localStateCachePrefix}${key}`, fallback);
+  return readStoredJson(localStorage, key, fallback);
 }
 
 function writeStateCache(key, value) {
-  if (!locallyCachedStateKeys.has(key)) return;
-  writeStoredJson(localStorage, `${localStateCachePrefix}${key}`, value);
+  writeStoredJson(localStorage, key, value);
 }
 
 function createSession(userId) {
@@ -312,37 +202,8 @@ function clearSession() {
   removeStoredValue(localStorage, storageKeys.legacySessionUser);
 }
 
-const defaultAuditLogs = [
-  {
-    id: 1,
-    date: '2026-07-08T09:00:00.000Z',
-    user_name: 'Shop Admin',
-    action: 'Security setup',
-    target: 'Plant Zone POS',
-    detail: 'Audit trail initialized',
-  },
-];
-
-const defaultInventoryHistory = [
-  {
-    id: 1,
-    date: '2026-07-08T09:30:00.000Z',
-    plant_name: 'Monstera Deliciosa',
-    before_quantity: 26,
-    after_quantity: 24,
-    reason: 'Sample sale',
-    user_name: 'Shop Admin',
-  },
-  {
-    id: 2,
-    date: '2026-07-06T10:00:00.000Z',
-    plant_name: 'Ceramic Pot Set',
-    before_quantity: 22,
-    after_quantity: 42,
-    reason: 'Sample stock in',
-    user_name: 'Shop Admin',
-  },
-];
+const defaultAuditLogs = [];
+const defaultInventoryHistory = [];
 
 function hasPermission(user, permission) {
   return Boolean(rolePermissions[user?.role]?.includes(permission));
@@ -408,7 +269,16 @@ function loadImageElement(source) {
   });
 }
 
-async function resizeImageSource(source, maxDimension = maxPlantImageDimension, quality = plantImageQuality) {
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Could not optimize image file.'));
+    }, type, quality);
+  });
+}
+
+async function resizeImageBlob(source, maxDimension = maxPlantImageDimension, quality = plantImageQuality) {
   const image = await loadImageElement(source);
   const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
   const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
@@ -418,7 +288,17 @@ async function resizeImageSource(source, maxDimension = maxPlantImageDimension, 
   canvas.height = height;
   const context = canvas.getContext('2d');
   context.drawImage(image, 0, 0, width, height);
-  return canvas.toDataURL('image/jpeg', quality);
+  return canvasToBlob(canvas, 'image/jpeg', quality);
+}
+
+async function resizeImageSource(source, maxDimension = maxPlantImageDimension, quality = plantImageQuality) {
+  const blob = await resizeImageBlob(source, maxDimension, quality);
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Could not read optimized image file.'));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function readFileAsDataUrl(file) {
@@ -433,7 +313,29 @@ function readFileAsDataUrl(file) {
 async function optimizePlantImageFile(file) {
   const original = await readFileAsDataUrl(file);
   if (typeof original !== 'string') throw new Error('Could not read image file.');
-  return resizeImageSource(original);
+  let dimension = maxPlantImageDimension;
+  let quality = plantImageQuality;
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const blob = await resizeImageBlob(original, dimension, quality);
+    if (blob.size <= maxStoredImageBytes || attempt === 7) {
+      return new File([blob], `${Date.now()}.jpg`, { type: 'image/jpeg' });
+    }
+    quality = Math.max(0.52, quality - 0.06);
+    if (attempt >= 3) dimension = Math.max(520, Math.round(dimension * 0.86));
+  }
+
+  throw new Error('Could not optimize image file.');
+}
+
+function storageImagePath(folder, file) {
+  const extension = file.type === 'image/webp' ? 'webp' : 'jpg';
+  return `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
+}
+
+async function uploadOptimizedImage(file, folder) {
+  const optimizedFile = await optimizePlantImageFile(file);
+  return uploadStorageImage(supabaseImageBucket, storageImagePath(folder, optimizedFile), optimizedFile);
 }
 
 async function optimizeOversizedPlantImages(plants) {
@@ -479,9 +381,10 @@ async function verifyPassword(password, storedHash) {
 }
 
 function usePersistentState(key, initialValue) {
+  const initialValueRef = useRef(initialValue);
   const [state, setState] = useState(() => readStateCache(key, initialValue));
   const [databaseLoaded, setDatabaseLoaded] = useState(!isSupabaseConfigured);
-  const hasLocalChanges = useRef(false);
+  const [hasLocalChanges, setHasLocalChanges] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -492,9 +395,12 @@ function usePersistentState(key, initialValue) {
       try {
         const databaseValue = await readAppState(key);
         if (!isMounted) return;
-        if (databaseValue !== null && !hasLocalChanges.current) {
+        if (databaseValue !== null) {
           setState(databaseValue);
           writeStateCache(key, databaseValue);
+        } else {
+          await writeAppState(key, initialValueRef.current);
+          writeStateCache(key, initialValueRef.current);
         }
       } catch (error) {
         console.error(`Could not load ${key} from Supabase`, error);
@@ -511,24 +417,24 @@ function usePersistentState(key, initialValue) {
   }, [key]);
 
   useEffect(() => {
-    if (!databaseLoaded || !isSupabaseConfigured || !hasLocalChanges.current) return;
+    if (!databaseLoaded || !isSupabaseConfigured || !hasLocalChanges) return;
 
     const saveTimer = window.setTimeout(() => {
       writeAppState(key, state).then(() => {
-        hasLocalChanges.current = false;
+        setHasLocalChanges(false);
       }).catch((error) => {
         console.error(`Could not save ${key} to Supabase`, error);
       });
     }, 350);
 
     return () => window.clearTimeout(saveTimer);
-  }, [databaseLoaded, key, state]);
+  }, [databaseLoaded, hasLocalChanges, key, state]);
 
   const setPersistentState = useCallback((value) => {
-    hasLocalChanges.current = true;
     setState((current) => {
       const nextValue = typeof value === 'function' ? value(current) : value;
       writeStateCache(key, nextValue);
+      setHasLocalChanges(true);
       return nextValue;
     });
   }, [key]);
@@ -612,8 +518,43 @@ function recoverPlantsFromHistory(plants, history) {
 
 function LoginPage({ users, setUsers, onLogin, onAudit }) {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
+  const [setup, setSetup] = useState({ name: '', username: '', password: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const needsFirstAdmin = users.length === 0;
+
+  const createFirstAdmin = async () => {
+    if (busy) return;
+    const validationError = validateText(setup.name, 'Name', 2, 80)
+      || validateText(setup.username, 'Username', 2, 40)
+      || validateText(setup.password, 'Password', 6, 80);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setBusy(true);
+    const admin = {
+      id: `user-${Date.now()}`,
+      name: setup.name.trim(),
+      username: setup.username.trim(),
+      password_hash: await hashPassword(setup.password),
+      role: 'admin',
+      can_view_reports: true,
+      active: true,
+      created_at: today(),
+      updated_at: today(),
+    };
+    setUsers([admin]);
+    onAudit({
+      user_name: admin.name,
+      action: 'First admin created',
+      target: admin.username,
+      detail: 'Initial local account setup',
+    });
+    onLogin(admin.id);
+    setBusy(false);
+  };
 
   const login = async () => {
     if (busy) return;
@@ -658,12 +599,22 @@ function LoginPage({ users, setUsers, onLogin, onAudit }) {
     <main className="login-page">
       <section className="login-card">
         <div className="login-brand"><span className="brand-mark"><Sprout size={26} /></span><div><strong>Plant Zone POS</strong><small>Garden Center · Pyay</small></div></div>
-        <div className="login-copy"><span className="eyebrow">Secure workspace</span><h1>Welcome back</h1><p>Sign in to manage sales, stock, customers, invoices, and reports.</p></div>
+        <div className="login-copy"><span className="eyebrow">Secure workspace</span><h1>{needsFirstAdmin ? 'Create admin' : 'Welcome back'}</h1><p>{needsFirstAdmin ? 'Start with a blank local workspace and create the first admin account.' : 'Sign in to manage sales, stock, customers, invoices, and reports.'}</p></div>
         <div className="login-form">
-          <label>Login username<input autoComplete="username" placeholder="admin, staff, or your login username" value={credentials.username} onChange={(event) => setCredentials({ ...credentials, username: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
-          <label>Password<input type="password" autoComplete="current-password" value={credentials.password} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
+          {needsFirstAdmin ? (
+            <>
+              <label>Name<input autoComplete="name" placeholder="Owner name" value={setup.name} onChange={(event) => setSetup({ ...setup, name: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') createFirstAdmin(); }} /></label>
+              <label>Login username<input autoComplete="username" placeholder="Choose a username" value={setup.username} onChange={(event) => setSetup({ ...setup, username: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') createFirstAdmin(); }} /></label>
+              <label>Password<input type="password" autoComplete="new-password" value={setup.password} onChange={(event) => setSetup({ ...setup, password: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') createFirstAdmin(); }} /></label>
+            </>
+          ) : (
+            <>
+              <label>Login username<input autoComplete="username" placeholder="Your login username" value={credentials.username} onChange={(event) => setCredentials({ ...credentials, username: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
+              <label>Password<input type="password" autoComplete="current-password" value={credentials.password} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') login(); }} /></label>
+            </>
+          )}
           {error && <p className="login-error" role="alert">{error}</p>}
-          <button className="primary-button wide" onClick={login} disabled={busy}><ShieldCheck size={18} /> {busy ? 'Signing in...' : 'Sign in'}</button>
+          <button className="primary-button wide" onClick={needsFirstAdmin ? createFirstAdmin : login} disabled={busy}><ShieldCheck size={18} /> {busy ? 'Please wait...' : needsFirstAdmin ? 'Create admin' : 'Sign in'}</button>
         </div>
       </section>
     </main>
@@ -671,15 +622,16 @@ function LoginPage({ users, setUsers, onLogin, onAudit }) {
 }
 
 function App() {
+  useState(prepareCleanStorage);
   const [activePage, setActivePage] = useState('pos');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
   const [invoiceListOpen, setInvoiceListOpen] = useState(false);
   const [stockModalOpen, setStockModalOpen] = useState(false);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
-  const [plants, setPlants, plantsLoaded] = usePersistentState('plant-zone-plants', samplePlants);
-  const [customers, setCustomers] = usePersistentState('plant-zone-customers', sampleCustomers);
-  const [invoices, setInvoices] = usePersistentState('plant-zone-invoices', sampleInvoices);
+  const [plants, setPlants, plantsLoaded] = usePersistentState('plant-zone-plants', emptyPlants);
+  const [customers, setCustomers] = usePersistentState('plant-zone-customers', emptyCustomers);
+  const [invoices, setInvoices] = usePersistentState('plant-zone-invoices', emptyInvoices);
   const [saleAdjustments, setSaleAdjustments] = usePersistentState('plant-zone-sale-adjustments', []);
   const [expenses, setExpenses] = usePersistentState('plant-zone-expenses', []);
   const [users, setUsers] = usePersistentState('plant-zone-users', defaultUsers);
@@ -849,7 +801,23 @@ function App() {
             setInventoryHistory={setInventoryHistory}
           />
         )}
-        {activePage === 'invoices' && <InvoiceArchivePage invoices={invoices} setInvoices={setInvoices} plants={activePlants} customers={customers} logAudit={logAudit} />}
+        {activePage === 'invoices' && (
+          <InvoicesPage
+            invoices={invoices}
+            setInvoices={setInvoices}
+            plants={activePlants}
+            setPlants={setPlants}
+            customers={customers}
+            isFormOpen={invoiceModalOpen}
+            setIsFormOpen={setInvoiceModalOpen}
+            isListOpen={invoiceListOpen}
+            setIsListOpen={setInvoiceListOpen}
+            nextInvoiceNo={nextInvoiceNo}
+            currentUser={currentUser}
+            logAudit={logAudit}
+            setInventoryHistory={setInventoryHistory}
+          />
+        )}
         {activePage === 'stock' && <StockPage plants={activePlants} plantsLoaded={plantsLoaded} setPlants={setPlants} adjustments={saleAdjustments} setAdjustments={setSaleAdjustments} history={inventoryHistory} setHistory={setInventoryHistory} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} currentUser={currentUser} logAudit={logAudit} />}
         {activePage === 'customers' && (
           <CustomersPage
@@ -876,6 +844,7 @@ function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, 
   const page = navItems.find((item) => item.id === activePage);
   const heroPlant = heroPlantImages[activePage] || heroPlantImages.pos;
   const isSalesPage = activePage === 'sales';
+  const isInvoicesPage = activePage === 'invoices';
   const isStockPage = activePage === 'stock';
   const isCustomersPage = activePage === 'customers';
   return (
@@ -884,7 +853,7 @@ function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, 
         <button className="icon-button mobile-menu" onClick={onMenu} aria-label="Open navigation">
           <Menu size={20} />
         </button>
-        <button className="soft-button topbar-date"><CalendarDays size={17} /> 08 Jul 2026</button>
+        <button className="soft-button topbar-date"><CalendarDays size={17} /> {today()}</button>
       </header>
       <section className={`hero hero-${activePage}`}>
         <div className="hero-plant-photo" aria-hidden="true">
@@ -902,9 +871,10 @@ function Header({ activePage, onMenu, onAddInvoice, onShowInvoices, onAddPlant, 
             <p className="eyebrow">Plant Zone Garden Center</p>
             <h1>{page?.label || 'Dashboard'}</h1>
             <p className="hero-copy">{activePage === 'pos' ? 'Key sales, invoice, stock, customer, and source health in one overview.' : 'A modern POS for plant sales, social media customers, delivery orders, reservations, landscaping service, invoices, and export-ready daily/monthly data.'}</p>
-            {(isSalesPage || isStockPage || isCustomersPage) && (
+            {(isSalesPage || isInvoicesPage || isStockPage || isCustomersPage) && (
               <div className="hero-actions">
                 {isSalesPage && <button className="primary-button" onClick={onAddInvoice}><Plus size={17} /> New Sale</button>}
+                {isInvoicesPage && <button className="primary-button" onClick={onAddInvoice}><Plus size={17} /> New Invoice</button>}
                 {isStockPage && <button className="primary-button" onClick={onAddPlant}><Plus size={17} /> Add Plant</button>}
                 {isCustomersPage && <button className="primary-button" onClick={onAddCustomer}><Plus size={17} /> Add Customer</button>}
               </div>
@@ -1526,12 +1496,12 @@ function InvoiceArchivePage({ invoices, setInvoices, plants = [], customers = []
       return;
     }
     try {
-      const image = await optimizePlantImageFile(file);
-      updateDraftPackage({ image });
+      const image = await uploadOptimizedImage(file, 'invoice-packages');
+      updateDraftPackage({ image: image.url, image_path: image.path });
       setFormError('');
     } catch (error) {
-      console.error('Could not optimize package image', error);
-      setFormError(appError('Could not read this package image. Try a different photo.', 'FILE_UPLOAD_ERROR').message);
+      console.error('Could not upload package image', error);
+      setFormError(appError('Could not upload this package image. Try a different photo.', 'FILE_UPLOAD_ERROR').message);
     } finally {
       event.target.value = '';
     }
@@ -1848,12 +1818,12 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
       return;
     }
     try {
-      const image = await optimizePlantImageFile(file);
-      updateDraftPackage({ image });
+      const image = await uploadOptimizedImage(file, 'invoice-packages');
+      updateDraftPackage({ image: image.url, image_path: image.path });
       setFormError('');
     } catch (error) {
-      console.error('Could not optimize package image', error);
-      setFormError(appError('Could not read this package image. Try a different photo.', 'FILE_UPLOAD_ERROR').message);
+      console.error('Could not upload package image', error);
+      setFormError(appError('Could not upload this package image. Try a different photo.', 'FILE_UPLOAD_ERROR').message);
     } finally {
       event.target.value = '';
     }
@@ -2017,6 +1987,7 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
               {draft.items.map((item, index) => (
                 <div className="invoice-edit-row" key={`draft-item-${index}`}>
                   <label>Plant<select value={item.plant_id || ''} onChange={(event) => selectPlant(index, event.target.value)}><option value="">Choose stock plant</option>{plants.map((plant) => <option value={plant.id} key={plant.id}>{plant.plant_name} - {plant.plant_code}</option>)}</select></label>
+                  <label>Item name<input value={item.plant_name} onChange={(event) => updateDraftItem(index, { plant_name: event.target.value })} placeholder="Plant or package item" /></label>
                   <label>Qty<input type="number" value={item.quantity} onChange={(event) => updateDraftItem(index, { quantity: Number(event.target.value) })} /></label>
                   <label>Selling price<input type="number" value={item.unit_price} onChange={(event) => updateDraftItem(index, { unit_price: Number(event.target.value) })} /></label>
                   <label>Original cost<input type="number" value={item.ws_price} onChange={(event) => updateDraftItem(index, { ws_price: Number(event.target.value) })} /></label>
@@ -2393,11 +2364,11 @@ function StockPage({ plants, plantsLoaded, setPlants, adjustments = [], setAdjus
     setImageBusy(true);
     setFormError('');
     try {
-      const image = await optimizePlantImageFile(file);
-      setDraft((current) => ({ ...current, image }));
+      const image = await uploadOptimizedImage(file, 'plants');
+      setDraft((current) => ({ ...current, image: image.url, image_path: image.path }));
     } catch (error) {
-      console.error('Could not optimize plant image', error);
-      setFormError(appError('Could not read this image. Try a different photo.', 'FILE_UPLOAD_ERROR').message);
+      console.error('Could not upload plant image', error);
+      setFormError(appError('Could not upload this image. Try a different photo.', 'FILE_UPLOAD_ERROR').message);
     } finally {
       setImageBusy(false);
       event.target.value = '';
@@ -2428,7 +2399,7 @@ function StockPage({ plants, plantsLoaded, setPlants, adjustments = [], setAdjus
             <label>Max price<input type="number" value={filters.maxPrice} onChange={(event) => setFilters({ ...filters, maxPrice: event.target.value })} placeholder="100000" /></label>
             <button className="ghost-button" type="button" onClick={() => setFilters({ search: '', type: '', size: '', minPrice: '', maxPrice: '' })}><RotateCcw size={16} /> Clear</button>
           </div>
-          <div className="stock-result-note">{filteredPlants.length} of {plants.length} plants shown{!plantsLoaded && <span> · Loading saved stock from Supabase...</span>}</div>
+          <div className="stock-result-note">{filteredPlants.length} of {plants.length} plants shown</div>
         <div className="stock-card-grid">
           {filteredPlants.map((plant) => {
             const damagedQuantity = Number(plant.damaged_quantity || 0);
@@ -3116,7 +3087,7 @@ function SettingsPage({ users, setUsers, currentUser, auditLogs, logAudit, onLog
           <label>Location<input value="Pyay, Bago Region, Myanmar" readOnly /></label>
           <label>Phone<input value="+95 9 756 040646" readOnly /></label>
           <label>Default payment method<input value="Cash" readOnly /></label>
-          <label>Data storage<input value={isSupabaseConfigured ? 'Supabase database + browser cache' : 'This browser / device'} readOnly /></label>
+          <label>Data storage<input value="This browser / device" readOnly /></label>
         </div>
       </section>
     </section>
