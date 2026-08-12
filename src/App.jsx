@@ -546,6 +546,7 @@ const recoveredPlantDefaults = {
   written_off_quantity: 0,
   image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=800&q=80',
 };
+const defaultInvoicePackage = { title: '', fee: 0, image: '', features: [] };
 
 function isActivePlant(plant) {
   return !plant?.deleted_at;
@@ -1396,6 +1397,7 @@ function InvoiceArchivePage({ invoices, setInvoices, plants = [], customers = []
     discount_amount: 0,
     customer: { cus_name: '', cus_ph: '', cus_address: '', source: 'Facebook' },
     items: [emptyItem],
+    photo_session_package: defaultInvoicePackage,
   };
   const [filters, setFilters] = useState({ customer: '', status: '', date: today() });
   const [showMore, setShowMore] = useState(false);
@@ -1428,10 +1430,12 @@ function InvoiceArchivePage({ invoices, setInvoices, plants = [], customers = []
       totals.wholesale += quantity * ws;
       return totals;
     }, { gross: 0, wholesale: 0 });
-    const discount = Math.min(Math.max(Number(draft.discount_amount) || 0, 0), itemTotals.gross);
-    const total = itemTotals.gross - discount;
-    return { ...itemTotals, discount, total, profit: total - itemTotals.wholesale };
-  }, [draft.items, draft.discount_amount]);
+    const packageFee = Number(draft.photo_session_package?.fee) || 0;
+    const gross = itemTotals.gross + packageFee;
+    const discount = Math.min(Math.max(Number(draft.discount_amount) || 0, 0), gross);
+    const total = gross - discount;
+    return { ...itemTotals, packageFee, gross, discount, total, profit: total - itemTotals.wholesale };
+  }, [draft.items, draft.discount_amount, draft.photo_session_package?.fee]);
   const deleteInvoice = (invoice) => {
     setInvoices((current) => current.filter((item) => item.id !== invoice.id));
     if (selectedId === invoice.id) setSelectedId('');
@@ -1463,6 +1467,7 @@ function InvoiceArchivePage({ invoices, setInvoices, plants = [], customers = []
         unit_price: item.unit_price,
         ws_price: item.ws_price,
       })),
+      photo_session_package: invoice.photo_session_package || defaultInvoicePackage,
     });
     setEditingId(invoice.id);
     setFormError('');
@@ -1505,6 +1510,31 @@ function InvoiceArchivePage({ invoices, setInvoices, plants = [], customers = []
       ...current,
       items: current.items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...updates } : item)),
     }));
+  };
+  const updateDraftPackage = (updates) => {
+    setDraft((current) => ({
+      ...current,
+      photo_session_package: { ...defaultInvoicePackage, ...current.photo_session_package, ...updates },
+    }));
+  };
+  const uploadPackageImage = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > maxPlantUploadBytes) {
+      setFormError(appError('Upload a valid package image under 5 MB.', 'FILE_UPLOAD_ERROR').message);
+      event.target.value = '';
+      return;
+    }
+    try {
+      const image = await optimizePlantImageFile(file);
+      updateDraftPackage({ image });
+      setFormError('');
+    } catch (error) {
+      console.error('Could not optimize package image', error);
+      setFormError(appError('Could not read this package image. Try a different photo.', 'FILE_UPLOAD_ERROR').message);
+    } finally {
+      event.target.value = '';
+    }
   };
   const saveEditedInvoice = () => {
     const validationError = validateInvoiceDraft(draft);
@@ -1553,6 +1583,11 @@ function InvoiceArchivePage({ invoices, setInvoices, plants = [], customers = []
       profit_total: invoiceTotals.profit,
       sale_amount: invoiceTotals.total,
       items,
+      photo_session_package: {
+        ...defaultInvoicePackage,
+        ...draft.photo_session_package,
+        fee: Number(draft.photo_session_package?.fee) || 0,
+      },
       updated_at: new Date().toISOString(),
     };
     setInvoices((current) => current.map((item) => (item.id === editingId ? invoice : item)));
@@ -1634,6 +1669,23 @@ function InvoiceArchivePage({ invoices, setInvoices, plants = [], customers = []
               ))}
               <button className="ghost-button" onClick={() => setDraft((current) => ({ ...current, items: [...current.items, emptyItem] }))}><Plus size={17} /> Add item</button>
             </div>
+            <section className="invoice-package-form">
+              <div className="panel-title-row">
+                <div><h3>Plant Package</h3><p>Add a package photo and price to show on the customer invoice.</p></div>
+              </div>
+              <div className="form-grid">
+                <label>Package name<input value={draft.photo_session_package?.title || ''} onChange={(event) => updateDraftPackage({ title: event.target.value })} placeholder="Plant Package" /></label>
+                <label>Package fee (Ks)<input type="number" min="0" value={draft.photo_session_package?.fee || 0} onChange={(event) => updateDraftPackage({ fee: Number(event.target.value) })} /></label>
+                <label className="span-2 image-upload-field">
+                  Package image
+                  <span className="image-upload-control">
+                    {draft.photo_session_package?.image ? <img src={draft.photo_session_package.image} alt="Package preview" /> : <Package size={30} />}
+                    <span>Upload package image</span>
+                    <input type="file" accept="image/*" onChange={uploadPackageImage} />
+                  </span>
+                </label>
+              </div>
+            </section>
             <Totals totals={{ gross: invoiceTotals.gross, discount: invoiceTotals.discount, total: invoiceTotals.total }} />
             <button className="primary-button wide" onClick={saveEditedInvoice}><Plus size={17} /> Update sale</button>
           </div>
@@ -1667,6 +1719,7 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
     discount_amount: 0,
     customer: { cus_name: '', cus_ph: '', cus_address: '', source: 'Facebook' },
     items: [emptyItem],
+    photo_session_package: defaultInvoicePackage,
   };
   const [filters, setFilters] = useState({ date: '', customer: '', status: '', source: '' });
   const [selectedId, setSelectedId] = useState(invoices[0]?.id ?? null);
@@ -1698,10 +1751,12 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
       totals.wholesale += quantity * ws;
       return totals;
     }, { gross: 0, wholesale: 0 });
-    const discount = Math.min(Math.max(Number(draft.discount_amount) || 0, 0), itemTotals.gross);
-    const total = itemTotals.gross - discount;
-    return { ...itemTotals, discount, total, profit: total - itemTotals.wholesale };
-  }, [draft.items, draft.discount_amount]);
+    const packageFee = Number(draft.photo_session_package?.fee) || 0;
+    const gross = itemTotals.gross + packageFee;
+    const discount = Math.min(Math.max(Number(draft.discount_amount) || 0, 0), gross);
+    const total = gross - discount;
+    return { ...itemTotals, packageFee, gross, discount, total, profit: total - itemTotals.wholesale };
+  }, [draft.items, draft.discount_amount, draft.photo_session_package?.fee]);
 
   const closeForm = () => {
     setDraft({ ...emptyDraft, invoice_no: nextInvoiceNo });
@@ -1731,6 +1786,7 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
         unit_price: item.unit_price,
         ws_price: item.ws_price,
       })),
+      photo_session_package: invoice.photo_session_package || defaultInvoicePackage,
     });
     setEditingId(invoice.id);
     setIsFormOpen(true);
@@ -1776,6 +1832,31 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
       ...current,
       items: current.items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...updates } : item)),
     }));
+  };
+  const updateDraftPackage = (updates) => {
+    setDraft((current) => ({
+      ...current,
+      photo_session_package: { ...defaultInvoicePackage, ...current.photo_session_package, ...updates },
+    }));
+  };
+  const uploadPackageImage = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > maxPlantUploadBytes) {
+      setFormError(appError('Upload a valid package image under 5 MB.', 'FILE_UPLOAD_ERROR').message);
+      event.target.value = '';
+      return;
+    }
+    try {
+      const image = await optimizePlantImageFile(file);
+      updateDraftPackage({ image });
+      setFormError('');
+    } catch (error) {
+      console.error('Could not optimize package image', error);
+      setFormError(appError('Could not read this package image. Try a different photo.', 'FILE_UPLOAD_ERROR').message);
+    } finally {
+      event.target.value = '';
+    }
   };
 
   const saveInvoice = () => {
@@ -1824,6 +1905,11 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
       profit_total: invoiceTotals.profit,
       sale_amount: invoiceTotals.total,
       items,
+      photo_session_package: {
+        ...defaultInvoicePackage,
+        ...draft.photo_session_package,
+        fee: Number(draft.photo_session_package?.fee) || 0,
+      },
       created_at: new Date().toISOString(),
     };
     if (editingId) {
@@ -1939,6 +2025,23 @@ function InvoicesPage({ invoices, setInvoices, plants, setPlants, customers, isF
               ))}
               <button className="ghost-button" onClick={() => setDraft((current) => ({ ...current, items: [...current.items, emptyItem] }))}><Plus size={17} /> Add item</button>
             </div>
+            <section className="invoice-package-form">
+              <div className="panel-title-row">
+                <div><h3>Plant Package</h3><p>Add a package photo and price to show on the customer invoice.</p></div>
+              </div>
+              <div className="form-grid">
+                <label>Package name<input value={draft.photo_session_package?.title || ''} onChange={(event) => updateDraftPackage({ title: event.target.value })} placeholder="Plant Package" /></label>
+                <label>Package fee (Ks)<input type="number" min="0" value={draft.photo_session_package?.fee || 0} onChange={(event) => updateDraftPackage({ fee: Number(event.target.value) })} /></label>
+                <label className="span-2 image-upload-field">
+                  Package image
+                  <span className="image-upload-control">
+                    {draft.photo_session_package?.image ? <img src={draft.photo_session_package.image} alt="Package preview" /> : <Package size={30} />}
+                    <span>Upload package image</span>
+                    <input type="file" accept="image/*" onChange={uploadPackageImage} />
+                  </span>
+                </label>
+              </div>
+            </section>
             <Totals totals={{ gross: invoiceTotals.gross, discount: invoiceTotals.discount, total: invoiceTotals.total }} />
             <button className="primary-button wide" onClick={saveInvoice}><Plus size={17} /> {editingId ? 'Update sale' : 'Save new sale'}</button>
           </div>
@@ -1952,8 +2055,11 @@ function InvoiceDetail({ invoice, onEdit, onDelete, readOnly = false }) {
   if (!invoice) return <div className="panel empty-state">No invoices yet.</div>;
   const paidAmount = Number(invoice.paid_amount ?? (invoice.payment_status === 'Paid' ? invoice.sale_amount : 0));
   const balanceAmount = Math.max(0, Number(invoice.sale_amount || 0) - paidAmount);
-  const grossAmount = Number(invoice.gross_total ?? (Number(invoice.subtotal || 0) + Number(invoice.discount_amount || 0)));
+  const packageData = { ...defaultInvoicePackage, ...invoice.photo_session_package };
+  const packageFee = Number(packageData.fee || 0);
+  const plantItemsTotal = invoice.items.reduce((sum, item) => sum + (Number(item.sale_amount) || 0), 0);
   const discountAmount = Number(invoice.discount_amount || 0);
+  const grossAmount = Number(invoice.gross_total ?? (plantItemsTotal + packageFee));
   return (
     <aside className="panel reveal invoice-detail printable">
       <div className="invoice-action-bar">
@@ -2009,6 +2115,19 @@ function InvoiceDetail({ invoice, onEdit, onDelete, readOnly = false }) {
                 ))}
               </tbody>
             </table>
+            {(packageFee > 0 || packageData.image) && (
+              <div className="invoice-package-card">
+                <div className="invoice-package-label"><Package size={14} /> Plant Package</div>
+                <div className="invoice-package-content">
+                  {packageData.image && <img src={packageData.image} alt={packageData.title || 'Plant package'} />}
+                  <div>
+                    <strong>{packageData.title || 'Plant Package'}</strong>
+                    <span>Package Fee: {money(packageFee)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
           <section className="invoice-total-card">
             <dl>
@@ -2051,8 +2170,9 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
   const emptyPlant = { plant_name: '', plant_code: '', plant_type: 'Indoor', size: 'M', quantity: 0, unit_price: 0, ws_price: 0, low_stock_limit: 5, image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=800&q=80' };
   const [draft, setDraft] = useState(emptyPlant);
   const [editingId, setEditingId] = useState(null);
-  const [filters, setFilters] = useState({ type: '', size: '', minPrice: '', maxPrice: '' });
+  const [filters, setFilters] = useState({ search: '', type: '', size: '', minPrice: '', maxPrice: '' });
   const [formError, setFormError] = useState('');
+  const [imageBusy, setImageBusy] = useState(false);
   const sizes = useMemo(() => Array.from(new Set(plants.map((plant) => plant.size).filter(Boolean))).sort(), [plants]);
   const stockTotals = useMemo(() => plants.reduce((totals, plant) => ({
     units: totals.units + Number(plant.quantity || 0),
@@ -2072,7 +2192,8 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
     const minPrice = filters.minPrice === '' ? null : Number(filters.minPrice);
     const maxPrice = filters.maxPrice === '' ? null : Number(filters.maxPrice);
     return (
-      (!filters.type || plant.plant_type === filters.type)
+      (!filters.search || clean(plant.plant_name).includes(clean(filters.search)))
+      && (!filters.type || plant.plant_type === filters.type)
       && (!filters.size || plant.size === filters.size)
       && (minPrice === null || Number(plant.unit_price || 0) >= minPrice)
       && (maxPrice === null || Number(plant.unit_price || 0) <= maxPrice)
@@ -2084,7 +2205,6 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
     if (validationError) {
       setFormError(appError(validationError, 'VALIDATION_ERROR').message);
       return;
-  const [imageBusy, setImageBusy] = useState(false);
     }
     const previous = plants.find((plant) => plant.id === editingId);
     const beforeQuantity = Number(previous?.quantity || 0);
@@ -2241,11 +2361,12 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
             </div>
           )}
           <div className="stock-filter-bar">
+            <label className="stock-search-field">Search plants<input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Plant name" /></label>
             <label>Type<select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="">All types</option>{plantTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
             <label>Size<select value={filters.size} onChange={(event) => setFilters({ ...filters, size: event.target.value })}><option value="">All sizes</option>{sizes.map((size) => <option key={size}>{size}</option>)}</select></label>
             <label>Min price<input type="number" value={filters.minPrice} onChange={(event) => setFilters({ ...filters, minPrice: event.target.value })} placeholder="0" /></label>
             <label>Max price<input type="number" value={filters.maxPrice} onChange={(event) => setFilters({ ...filters, maxPrice: event.target.value })} placeholder="100000" /></label>
-            <button className="ghost-button" type="button" onClick={() => setFilters({ type: '', size: '', minPrice: '', maxPrice: '' })}><RotateCcw size={16} /> Clear</button>
+            <button className="ghost-button" type="button" onClick={() => setFilters({ search: '', type: '', size: '', minPrice: '', maxPrice: '' })}><RotateCcw size={16} /> Clear</button>
           </div>
           <div className="stock-result-note">{filteredPlants.length} of {plants.length} plants shown</div>
         <div className="stock-card-grid">
@@ -3085,3 +3206,7 @@ function bestBy(rows, key) {
 }
 
 export default App;
+
+
+
+

@@ -2184,7 +2184,7 @@ textarea {
 
 .stock-filter-bar {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(120px, 0.8fr) minmax(110px, 0.7fr) minmax(110px, 0.7fr) auto;
+  grid-template-columns: minmax(180px, 1.3fr) repeat(4, minmax(110px, 0.8fr));
   align-items: end;
   gap: 10px;
   padding: 12px;
@@ -2200,6 +2200,10 @@ textarea {
   font-weight: 900;
 }
 
+.stock-search-field {
+  min-width: min(260px, 100%);
+}
+
 .stock-filter-bar input,
 .stock-filter-bar select {
   margin-top: 5px;
@@ -2207,7 +2211,10 @@ textarea {
 }
 
 .stock-filter-bar .ghost-button {
+  grid-column: 1 / -1;
+  justify-self: center;
   min-height: 40px;
+  min-width: 132px;
   border: 1px solid var(--line);
 }
 
@@ -3032,6 +3039,342 @@ textarea {
   font-weight: 950;
   text-transform: uppercase;
 }
+
+.invoice-photo-session-section {
+  margin: 24px 0;
+  padding: 20px 24px;
+  border: 2px solid rgba(75, 96, 59, 0.14);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(236, 241, 229, 0.5), rgba(238, 246, 232, 0.8));
+}
+
+.photo-session-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.photo-session-icon {
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.photo-session-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #2E7D32;
+}
+
+.photo-session-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: center;
+}
+
+.photo-session-image {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.6);
+  overflow: hidden;
+}
+
+.photo-session-image img {
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+}
+
+.photo-session-placeholder {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.6);
+  color: #667267;
+  font-size: 14px;
+  gap: 8px;
+}
+
+.photo-session-placeholder span {
+  font-size: 48px;
+  opacity: 0.4;
+}
+
+.photo-session-details h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #2E7D32;
+}
+
+.package-fee {
+  margin: 8px 0;
+  color: #667267;
+  font-size: 14px;
+}
+
+.photo-session-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.photo-session-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+
+.invoice-photo-session-simple {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 24px;
+  align-items: flex-start;
+  margin: 24px 0;
+  padding: 20px 24px;
+  border: 2px solid rgba(75, 96, 59, 0.14);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(236, 241, 229, 0.5), rgba(238, 246, 232, 0.8));
+}
+
+.photo-session-image-only {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.photo-session-image-only img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.photo-session-price {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+}
+
+.price-label {
+  font-size: 14px;
+  color: #667267;
+  font-weight: 500;
+}
+
+.price-amount {
+  font-size: 24px;
+  font-weight: 700;
+  color: #2E7D32;
+}
+
+.invoice-photo-session {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 20px;
+  align-items: start;
+  margin: 24px 0;
+  padding: 20px 24px;
+  border: 2px solid rgba(75, 96, 59, 0.14);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(236, 241, 229, 0.5), rgba(238, 246, 232, 0.8));
+}
+
+.invoice-photo-session .photo-session-image {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 180px;
+  height: 180px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.invoice-photo-session .photo-session-image img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.invoice-photo-session .photo-session-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+}
+
+.invoice-photo-session .photo-session-details h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #2E7D32;
+}
+
+.photo-session-features {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.photo-session-features li {
+  font-size: 14px;
+  color: #667267;
+  padding-left: 20px;
+  position: relative;
+}
+
+.photo-session-features li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  color: #2E7D32;
+  font-weight: bold;
+}
+
+.photo-session-fee {
+  margin: 12px 0 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #2E7D32;
+}
+
+.photo-session-form label.span-2 {
+  grid-column: 1 / -1;
+}
+
+.photo-session-form input[type="file"] {
+  padding: 8px;
+  border: 1px solid rgba(75, 96, 59, 0.2);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.photo-preview {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 8px;
+  border: 1px solid rgba(75, 96, 59, 0.12);
+}
+
+.photo-preview img {
+  max-width: 150px;
+  max-height: 150px;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+.photo-preview button {
+  padding: 6px 12px;
+  background: rgba(185, 58, 50, 0.15);
+  color: #B93A32;
+  border: 1px solid #B93A32;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.photo-preview button:hover {
+  background: rgba(185, 58, 50, 0.25);
+}
+
+.invoice-package-form {
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid var(--soft-line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.invoice-package-form .panel-title-row {
+  margin-bottom: 12px;
+}
+
+.invoice-package-form h3,
+.invoice-package-form p {
+  margin: 0;
+}
+
+.invoice-package-card {
+  margin: 18px;
+  padding: 16px 18px;
+  border: 1px solid rgba(75, 96, 59, 0.2);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(245, 249, 240, 0.92), rgba(236, 243, 231, 0.92)),
+    #f5f8f0;
+}
+
+.invoice-package-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #3f5b35;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.invoice-package-content {
+  display: grid;
+  grid-template-columns: minmax(150px, 260px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: center;
+}
+
+.invoice-package-content img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 3px;
+  object-fit: cover;
+  background: #fff;
+}
+
+.invoice-package-content strong,
+.invoice-package-content span {
+  display: block;
+}
+
+.invoice-package-content strong {
+  color: #3f5b35;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.invoice-package-content span {
+  margin-top: 8px;
+  color: #4f6049;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 
 .invoice-bottom {
   display: grid;
@@ -4541,6 +4884,14 @@ td {
     padding: 18px;
   }
 
+  .invoice-package-content {
+    grid-template-columns: 1fr;
+  }
+
+  .invoice-package-content img {
+    max-width: 260px;
+  }
+
   .summary-grid,
   .plant-grid,
   .form-grid,
@@ -4715,6 +5066,16 @@ td {
 
   .invoice-table-wrap {
     overflow: visible;
+  }
+
+  .invoice-package-card {
+    margin: 10px;
+    padding: 10px 12px;
+  }
+
+  .invoice-package-content {
+    grid-template-columns: 42mm 1fr;
+    gap: 10mm;
   }
 
   .invoice-info-grid section,
