@@ -850,7 +850,7 @@ function App() {
           />
         )}
         {activePage === 'invoices' && <InvoiceArchivePage invoices={invoices} setInvoices={setInvoices} plants={activePlants} customers={customers} logAudit={logAudit} />}
-        {activePage === 'stock' && <StockPage plants={activePlants} setPlants={setPlants} adjustments={saleAdjustments} setAdjustments={setSaleAdjustments} history={inventoryHistory} setHistory={setInventoryHistory} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} currentUser={currentUser} logAudit={logAudit} />}
+        {activePage === 'stock' && <StockPage plants={activePlants} plantsLoaded={plantsLoaded} setPlants={setPlants} adjustments={saleAdjustments} setAdjustments={setSaleAdjustments} history={inventoryHistory} setHistory={setInventoryHistory} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} currentUser={currentUser} logAudit={logAudit} />}
         {activePage === 'customers' && (
           <CustomersPage
             customers={customers}
@@ -2166,7 +2166,65 @@ function InvoiceDetail({ invoice, onEdit, onDelete, readOnly = false }) {
   );
 }
 
-function StockPage({ plants, setPlants, adjustments = [], setAdjustments, history, setHistory, isFormOpen, setIsFormOpen, currentUser, logAudit }) {
+function StockCardImage({ src, fallback, alt }) {
+  const [imageSrc, setImageSrc] = useState(src || fallback);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    setLoaded(false);
+    setImageSrc(src || fallback);
+  }, [src, fallback]);
+
+  return (
+    <span className={`stock-card-image-frame ${loaded ? 'loaded' : ''}`}>
+      <span className="stock-image-skeleton" aria-hidden="true" />
+      <img
+        src={imageSrc}
+        alt={alt}
+        onLoad={() => setLoaded(true)}
+        onError={() => {
+          if (imageSrc !== fallback) {
+            setImageSrc(fallback);
+            return;
+          }
+          setLoaded(true);
+        }}
+      />
+    </span>
+  );
+}
+
+function StockCardSkeleton() {
+  return (
+    <article className="stock-card stock-card-skeleton" aria-hidden="true">
+      <div className="skeleton-block skeleton-image" />
+      <div className="stock-card-main">
+        <div>
+          <div className="skeleton-block skeleton-title" />
+          <div className="skeleton-block skeleton-code" />
+        </div>
+        <dl className="stock-card-metrics">
+          <div><dt /><dd className="skeleton-block" /></div>
+          <div><dt /><dd className="skeleton-block" /></div>
+          <div><dt /><dd className="skeleton-block" /></div>
+        </dl>
+      </div>
+      <div className="stock-card-side">
+        <div className="skeleton-block skeleton-pill" />
+        <div className="stock-card-actions">
+          <div className="skeleton-block skeleton-button" />
+          <div className="skeleton-block skeleton-button" />
+        </div>
+      </div>
+      <div className="stock-card-footer">
+        <div className="skeleton-block skeleton-footer" />
+        <div className="skeleton-block skeleton-footer" />
+      </div>
+    </article>
+  );
+}
+
+function StockPage({ plants, plantsLoaded, setPlants, adjustments = [], setAdjustments, history, setHistory, isFormOpen, setIsFormOpen, currentUser, logAudit }) {
   const emptyPlant = { plant_name: '', plant_code: '', plant_type: 'Indoor', size: 'M', quantity: 0, unit_price: 0, ws_price: 0, low_stock_limit: 5, image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=800&q=80' };
   const [draft, setDraft] = useState(emptyPlant);
   const [editingId, setEditingId] = useState(null);
@@ -2199,6 +2257,8 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
       && (maxPrice === null || Number(plant.unit_price || 0) <= maxPrice)
     );
   }), [plants, filters]);
+  const showStockSkeletons = !plantsLoaded && !filters.search;
+  const stockSkeletonCount = Math.max(4, 8 - Math.min(filteredPlants.length, 8));
 
   const savePlant = () => {
     const validationError = validatePlant(draft);
@@ -2368,7 +2428,7 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
             <label>Max price<input type="number" value={filters.maxPrice} onChange={(event) => setFilters({ ...filters, maxPrice: event.target.value })} placeholder="100000" /></label>
             <button className="ghost-button" type="button" onClick={() => setFilters({ search: '', type: '', size: '', minPrice: '', maxPrice: '' })}><RotateCcw size={16} /> Clear</button>
           </div>
-          <div className="stock-result-note">{filteredPlants.length} of {plants.length} plants shown</div>
+          <div className="stock-result-note">{filteredPlants.length} of {plants.length} plants shown{!plantsLoaded && <span> · Loading saved stock from Supabase...</span>}</div>
         <div className="stock-card-grid">
           {filteredPlants.map((plant) => {
             const damagedQuantity = Number(plant.damaged_quantity || 0);
@@ -2376,7 +2436,7 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
             const hasConditionStock = damagedQuantity > 0 || writtenOffQuantity > 0;
             return (
             <article key={plant.id} className={`stock-card ${plant.quantity <= plant.low_stock_limit ? 'low-stock-card' : ''} ${Number(plant.quantity) === 0 ? 'out-stock-card' : ''}`}>
-              <img src={plant.image || emptyPlant.image} alt={plant.plant_name} onError={(event) => { event.currentTarget.src = emptyPlant.image; }} />
+              <StockCardImage src={plant.image} fallback={emptyPlant.image} alt={plant.plant_name} />
               <div className="stock-card-main">
                 <div>
                   <strong>{plant.plant_name}</strong>
@@ -2433,7 +2493,8 @@ function StockPage({ plants, setPlants, adjustments = [], setAdjustments, histor
             </article>
             );
           })}
-          {filteredPlants.length === 0 && <div className="empty-state">No plants match these filters.</div>}
+          {showStockSkeletons && Array.from({ length: stockSkeletonCount }, (_, index) => <StockCardSkeleton key={`stock-loading-${index}`} />)}
+          {filteredPlants.length === 0 && !showStockSkeletons && <div className="empty-state">No plants match these filters.</div>}
         </div>
       </div>
       <footer className="panel reveal stock-footer">

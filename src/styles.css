@@ -642,6 +642,12 @@ button:disabled {
   }
 }
 
+@keyframes stock-skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 .hero-pos .hero-plant-animation span {
   display: block;
   border-radius: 52% 48% 54% 46%;
@@ -2264,13 +2270,102 @@ textarea {
   background: #fffafa;
 }
 
-.stock-card img {
+.stock-card-image-frame {
+  position: relative;
+  display: block;
   width: 96px;
   height: 96px;
   border: 1px solid var(--soft-line);
   border-radius: 12px;
-  object-fit: cover;
   background: var(--cream);
+  overflow: hidden;
+}
+
+.stock-card-image-frame img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.stock-card-image-frame.loaded img {
+  opacity: 1;
+}
+
+.stock-image-skeleton,
+.skeleton-block {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #eef3eb;
+}
+
+.stock-image-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.stock-image-skeleton::after,
+.skeleton-block::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
+  animation: stock-skeleton-shimmer 1.25s ease-in-out infinite;
+}
+
+.stock-card-skeleton {
+  pointer-events: none;
+}
+
+.stock-card-skeleton:hover {
+  transform: none;
+  border-color: var(--line);
+  box-shadow: var(--small-shadow);
+}
+
+.stock-card-skeleton .skeleton-image {
+  width: 96px;
+  height: 96px;
+  border-radius: 12px;
+}
+
+.skeleton-title {
+  width: min(220px, 82%);
+  height: 18px;
+}
+
+.skeleton-code {
+  width: 110px;
+  height: 12px;
+  margin-top: 8px;
+}
+
+.stock-card-skeleton .stock-card-metrics dd {
+  width: 100%;
+  height: 16px;
+}
+
+.skeleton-pill {
+  width: 88px;
+  height: 26px;
+  border-radius: 999px;
+}
+
+.skeleton-button {
+  width: 68px;
+  height: 34px;
+}
+
+.skeleton-footer {
+  width: 118px;
+  height: 14px;
 }
 
 .stock-card-main {
@@ -4772,7 +4867,8 @@ td {
     min-height: 0;
   }
 
-  .stock-card img {
+  .stock-card-image-frame,
+  .stock-card-skeleton .skeleton-image {
     width: 62px;
     height: 62px;
   }
