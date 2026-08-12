@@ -70,3 +70,11 @@ export async function uploadStorageImage(bucket, path, file) {
     url: publicStorageUrl(bucket, data.path),
   };
 }
+
+export async function deleteStorageImages(bucket, paths) {
+  if (!isSupabaseConfigured || !paths?.length) return [];
+
+  const { data, error } = await supabase.storage.from(bucket).remove(paths);
+  if (error) throw normalizeDatabaseError(error, 'Could not delete stored image.');
+  return data;
+}

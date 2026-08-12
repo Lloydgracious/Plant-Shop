@@ -31,7 +31,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { readAppState, uploadStorageImage, writeAppState } from './database';
+import { deleteStorageImages, readAppState, uploadStorageImage, writeAppState } from './database';
 import { isSupabaseConfigured } from './supabaseClient';
 import invoiceLeavesTopRight from './assets/invoice-leaves-top-right.png';
 import invoicePlantBottomLeft from './assets/invoice-plant-bottom-left.png';
@@ -80,6 +80,7 @@ const monthNow = () => new Date().toISOString().slice(0, 7);
 const clean = (value) => String(value ?? '').toLowerCase();
 const saleStageFor = (invoice) => saleStages.includes(invoice?.order_status) ? invoice.order_status : 'Confirmed';
 const CONFIRMED_DETAIL_VISIBLE_DAYS = 7;
+const DELETED_PLANT_RETENTION_DAYS = 30;
 const isWithinDays = (value, days) => {
   if (!value) return true;
   const date = new Date(value);
@@ -458,6 +459,10 @@ function isActivePlant(plant) {
   return !plant?.deleted_at;
 }
 
+function shouldPurgeDeletedPlant(plant) {
+  return Boolean(plant?.deleted_at) && !isWithinDays(plant.deleted_at, DELETED_PLANT_RETENTION_DAYS);
+}
+
 function plantIdentity(name, code) {
   return `${clean(name)}|${clean(code)}`;
 }
@@ -669,6 +674,37 @@ function App() {
 
     return () => {
       isMounted = false;
+    };
+  }, [plants, plantsLoaded, setPlants]);
+
+  useEffect(() => {
+    if (!plantsLoaded) return;
+    const expiredDeletedPlants = plants.filter(shouldPurgeDeletedPlant);
+    if (!expiredDeletedPlants.length) return;
+
+    let isCancelled = false;
+
+    async function purgeDeletedPlants() {
+      const imagePaths = Array.from(new Set(expiredDeletedPlants
+        .map((plant) => plant.image_path)
+        .filter(Boolean)));
+
+      if (imagePaths.length) {
+        try {
+          await deleteStorageImages(supabaseImageBucket, imagePaths);
+        } catch (error) {
+          console.warn('Could not delete one or more expired plant images from storage', error);
+        }
+      }
+
+      if (isCancelled) return;
+      setPlants((current) => current.filter((plant) => !shouldPurgeDeletedPlant(plant)));
+    }
+
+    purgeDeletedPlants();
+
+    return () => {
+      isCancelled = true;
     };
   }, [plants, plantsLoaded, setPlants]);
 
