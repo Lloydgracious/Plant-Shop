@@ -838,21 +838,25 @@ function App() {
           />
         )}
         {activePage === 'invoices' && (
-          <InvoicesPage
-            invoices={invoices}
-            setInvoices={setInvoices}
-            plants={activePlants}
-            setPlants={setPlants}
-            customers={customers}
-            isFormOpen={invoiceModalOpen}
-            setIsFormOpen={setInvoiceModalOpen}
-            isListOpen={invoiceListOpen}
-            setIsListOpen={setInvoiceListOpen}
-            nextInvoiceNo={nextInvoiceNo}
-            currentUser={currentUser}
-            logAudit={logAudit}
-            setInventoryHistory={setInventoryHistory}
-          />
+          <>
+            <InvoiceArchivePage invoices={invoices} setInvoices={setInvoices} plants={activePlants} customers={customers} logAudit={logAudit} />
+            <InvoicesPage
+              invoices={invoices}
+              setInvoices={setInvoices}
+              plants={activePlants}
+              setPlants={setPlants}
+              customers={customers}
+              isFormOpen={invoiceModalOpen}
+              setIsFormOpen={setInvoiceModalOpen}
+              isListOpen={invoiceListOpen}
+              setIsListOpen={setInvoiceListOpen}
+              nextInvoiceNo={nextInvoiceNo}
+              showWorkspace={false}
+              currentUser={currentUser}
+              logAudit={logAudit}
+              setInventoryHistory={setInventoryHistory}
+            />
+          </>
         )}
         {activePage === 'stock' && <StockPage plants={activePlants} plantsLoaded={plantsLoaded} setPlants={setPlants} adjustments={saleAdjustments} setAdjustments={setSaleAdjustments} history={inventoryHistory} setHistory={setInventoryHistory} isFormOpen={stockModalOpen} setIsFormOpen={setStockModalOpen} currentUser={currentUser} logAudit={logAudit} />}
         {activePage === 'customers' && (
