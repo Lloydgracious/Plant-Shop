@@ -385,7 +385,6 @@ function usePersistentState(key, initialValue) {
   const initialValueRef = useRef(initialValue);
   const [state, setState] = useState(() => readStateCache(key, initialValue));
   const [databaseLoaded, setDatabaseLoaded] = useState(!isSupabaseConfigured);
-  const [databaseError, setDatabaseError] = useState('');
   const [hasLocalChanges, setHasLocalChanges] = useState(false);
 
   useEffect(() => {
@@ -406,7 +405,6 @@ function usePersistentState(key, initialValue) {
         }
       } catch (error) {
         console.error(`Could not load ${key} from Supabase`, error);
-        setDatabaseError(error?.message || 'Could not load shared app data.');
       } finally {
         if (isMounted) setDatabaseLoaded(true);
       }
@@ -442,7 +440,7 @@ function usePersistentState(key, initialValue) {
     });
   }, [key]);
 
-  return [state, setPersistentState, databaseLoaded, databaseError];
+  return [state, setPersistentState, databaseLoaded];
 }
 
 const recoveredPlantDefaults = {
@@ -635,28 +633,6 @@ function LoginPage({ users, setUsers, onLogin, onAudit }) {
   );
 }
 
-function LoadingPage() {
-  return (
-    <main className="login-page">
-      <section className="login-card">
-        <div className="login-brand"><span className="brand-mark"><Sprout size={26} /></span><div><strong>Plant Zone POS</strong><small>Garden Center | Pyay</small></div></div>
-        <div className="login-copy"><span className="eyebrow">Secure workspace</span><h1>Loading workspace</h1><p>Checking the shared store data before sign in.</p></div>
-      </section>
-    </main>
-  );
-}
-
-function ConfigurationErrorPage({ message = 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel, then redeploy this site.' }) {
-  return (
-    <main className="login-page">
-      <section className="login-card">
-        <div className="login-brand"><span className="brand-mark"><TriangleAlert size={26} /></span><div><strong>Plant Zone POS</strong><small>Setup required</small></div></div>
-        <div className="login-copy"><span className="eyebrow">Database unavailable</span><h1>Shared data cannot load</h1><p>{message}</p></div>
-      </section>
-    </main>
-  );
-}
-
 function App() {
   useState(prepareCleanStorage);
   const [activePage, setActivePage] = useState('pos');
@@ -670,7 +646,7 @@ function App() {
   const [invoices, setInvoices] = usePersistentState('plant-zone-invoices', emptyInvoices);
   const [saleAdjustments, setSaleAdjustments] = usePersistentState('plant-zone-sale-adjustments', []);
   const [expenses, setExpenses] = usePersistentState('plant-zone-expenses', []);
-  const [users, setUsers, usersLoaded, usersLoadError] = usePersistentState('plant-zone-users', defaultUsers);
+  const [users, setUsers] = usePersistentState('plant-zone-users', defaultUsers);
   const [auditLogs, setAuditLogs] = usePersistentState('plant-zone-audit-logs', defaultAuditLogs);
   const [inventoryHistory, setInventoryHistory, inventoryHistoryLoaded] = usePersistentState('plant-zone-stock-history', defaultInventoryHistory);
   const [sessionUserId, setSessionUserId] = useState(() => readSession()?.userId || '');
@@ -801,9 +777,6 @@ function App() {
   const todayRows = useMemo(() => rows.filter((row) => row.date === today()), [rows]);
   const monthlyRows = useMemo(() => rows.filter((row) => row.date.startsWith(monthNow())), [rows]);
 
-  if (!isSupabaseConfigured) return <ConfigurationErrorPage />;
-  if (!usersLoaded) return <LoadingPage />;
-  if (usersLoadError) return <ConfigurationErrorPage message={usersLoadError} />;
   if (!currentUser) return <LoginPage users={users} setUsers={setUsers} onLogin={handleLogin} onAudit={logAudit} />;
 
   return (
@@ -3168,7 +3141,7 @@ function SettingsPage({ users, setUsers, currentUser, auditLogs, logAudit, onLog
           <label>Location<input value="Pyay, Bago Region, Myanmar" readOnly /></label>
           <label>Phone<input value="+95 9 756 040646" readOnly /></label>
           <label>Default payment method<input value="Cash" readOnly /></label>
-          <label>Data storage<input value="Shared Supabase database" readOnly /></label>
+          <label>Data storage<input value="This browser / device" readOnly /></label>
         </div>
       </section>
     </section>
