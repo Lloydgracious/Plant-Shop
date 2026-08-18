@@ -59,7 +59,30 @@ const heroPlantImages = {
 const emptyPlants = [];
 const emptyCustomers = [];
 const emptyInvoices = [];
-const defaultUsers = [];
+const defaultUsers = [
+  {
+    id: 'user-default-admin',
+    name: 'Plant Zone Admin',
+    username: 'admin',
+    password: 'admin1234',
+    role: 'admin',
+    can_view_reports: true,
+    active: true,
+    created_at: '2026-08-13',
+    updated_at: '2026-08-13',
+  },
+  {
+    id: 'user-default-staff',
+    name: 'Garden Staff',
+    username: 'staff',
+    password: 'staff1234',
+    role: 'staff',
+    can_view_reports: false,
+    active: true,
+    created_at: '2026-08-13',
+    updated_at: '2026-08-13',
+  },
+];
 
 const navItems = [
   { id: 'pos', label: 'Dashboard', icon: BarChart3, group: 'Selling' },
@@ -521,12 +544,24 @@ function recoverPlantsFromHistory(plants, history) {
     }, []);
 }
 
+function LoadingPage() {
+  return (
+    <main className="login-page">
+      <section className="login-card">
+        <div className="login-brand"><span className="brand-mark"><Sprout size={26} /></span><div><strong>Plant Zone POS</strong><small>Garden Center · Pyay</small></div></div>
+        <div className="login-copy"><span className="eyebrow">Secure workspace</span><h1>Loading workspace</h1><p>Checking store data before sign in...</p></div>
+      </section>
+    </main>
+  );
+}
+
 function LoginPage({ users, setUsers, onLogin, onAudit }) {
+  const [mode, setMode] = useState(users.length === 0 ? 'create' : 'login');
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [setup, setSetup] = useState({ name: '', username: '', password: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const needsFirstAdmin = users.length === 0;
+  const isCreateMode = mode === 'create';
 
   const createFirstAdmin = async () => {
     if (busy) return;
@@ -611,9 +646,9 @@ function LoginPage({ users, setUsers, onLogin, onAudit }) {
     <main className="login-page">
       <section className="login-card">
         <div className="login-brand"><span className="brand-mark"><Sprout size={26} /></span><div><strong>Plant Zone POS</strong><small>Garden Center · Pyay</small></div></div>
-        <div className="login-copy"><span className="eyebrow">Secure workspace</span><h1>{needsFirstAdmin ? 'Create admin' : 'Welcome back'}</h1><p>{needsFirstAdmin ? 'Start with a blank local workspace and create the first admin account.' : 'Sign in to manage sales, stock, customers, invoices, and reports.'}</p></div>
+        <div className="login-copy"><span className="eyebrow">Secure workspace</span><h1>{isCreateMode ? 'Create admin' : 'Welcome back'}</h1><p>{isCreateMode ? 'Create an admin account to manage this POS workspace.' : 'Sign in to manage plant sales, stock, customers, and reports.'}</p></div>
         <div className="login-form">
-          {needsFirstAdmin ? (
+          {isCreateMode ? (
             <>
               <label>Name<input autoComplete="name" placeholder="Owner name" value={setup.name} onChange={(event) => setSetup({ ...setup, name: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') createFirstAdmin(); }} /></label>
               <label>Login username<input autoComplete="username" placeholder="Choose a username" value={setup.username} onChange={(event) => setSetup({ ...setup, username: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') createFirstAdmin(); }} /></label>
@@ -626,7 +661,16 @@ function LoginPage({ users, setUsers, onLogin, onAudit }) {
             </>
           )}
           {error && <p className="login-error" role="alert">{error}</p>}
-          <button className="primary-button wide" onClick={needsFirstAdmin ? createFirstAdmin : login} disabled={busy}><ShieldCheck size={18} /> {busy ? 'Please wait...' : needsFirstAdmin ? 'Create admin' : 'Sign in'}</button>
+          <button className="primary-button wide" onClick={isCreateMode ? createFirstAdmin : login} disabled={busy}><ShieldCheck size={18} /> {busy ? 'Please wait...' : isCreateMode ? 'Create admin' : 'Sign in'}</button>
+          {!isCreateMode && (
+            <div className="login-quick-hint">
+              <small>Default Admin: <code>admin</code> / <code>admin1234</code></small>
+              <button type="button" className="ghost-button" style={{ marginTop: '8px', fontSize: '12px' }} onClick={() => setCredentials({ username: 'admin', password: 'admin1234' })}>Quick Fill Admin Login</button>
+            </div>
+          )}
+          <button type="button" className="ghost-button wide" style={{ marginTop: '10px' }} onClick={() => { setError(''); setMode(isCreateMode ? 'login' : 'create'); }}>
+            {isCreateMode ? 'Already have an account? Sign in' : 'Need to create a new account? Create admin'}
+          </button>
         </div>
       </section>
     </main>
@@ -646,7 +690,7 @@ function App() {
   const [invoices, setInvoices] = usePersistentState('plant-zone-invoices', emptyInvoices);
   const [saleAdjustments, setSaleAdjustments] = usePersistentState('plant-zone-sale-adjustments', []);
   const [expenses, setExpenses] = usePersistentState('plant-zone-expenses', []);
-  const [users, setUsers] = usePersistentState('plant-zone-users', defaultUsers);
+  const [users, setUsers, usersLoaded] = usePersistentState('plant-zone-users', defaultUsers);
   const [auditLogs, setAuditLogs] = usePersistentState('plant-zone-audit-logs', defaultAuditLogs);
   const [inventoryHistory, setInventoryHistory, inventoryHistoryLoaded] = usePersistentState('plant-zone-stock-history', defaultInventoryHistory);
   const [sessionUserId, setSessionUserId] = useState(() => readSession()?.userId || '');
@@ -777,6 +821,7 @@ function App() {
   const todayRows = useMemo(() => rows.filter((row) => row.date === today()), [rows]);
   const monthlyRows = useMemo(() => rows.filter((row) => row.date.startsWith(monthNow())), [rows]);
 
+  if (!usersLoaded) return <LoadingPage />;
   if (!currentUser) return <LoginPage users={users} setUsers={setUsers} onLogin={handleLogin} onAudit={logAudit} />;
 
   return (
