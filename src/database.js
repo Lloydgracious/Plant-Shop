@@ -30,7 +30,7 @@ export async function writeAppState(key, value) {
       state_key: key,
       value,
       updated_at: new Date().toISOString(),
-    });
+    }, { onConflict: 'state_key' });
 
   if (error) throw normalizeDatabaseError(error, 'Could not save app data.');
 }

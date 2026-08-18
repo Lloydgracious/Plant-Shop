@@ -385,6 +385,7 @@ function usePersistentState(key, initialValue) {
   const initialValueRef = useRef(initialValue);
   const [state, setState] = useState(() => readStateCache(key, initialValue));
   const [databaseLoaded, setDatabaseLoaded] = useState(!isSupabaseConfigured);
+  const [databaseError, setDatabaseError] = useState('');
   const [hasLocalChanges, setHasLocalChanges] = useState(false);
 
   useEffect(() => {
@@ -405,6 +406,7 @@ function usePersistentState(key, initialValue) {
         }
       } catch (error) {
         console.error(`Could not load ${key} from Supabase`, error);
+        setDatabaseError(error?.message || 'Could not load shared app data.');
       } finally {
         if (isMounted) setDatabaseLoaded(true);
       }
@@ -440,7 +442,7 @@ function usePersistentState(key, initialValue) {
     });
   }, [key]);
 
-  return [state, setPersistentState, databaseLoaded];
+  return [state, setPersistentState, databaseLoaded, databaseError];
 }
 
 const recoveredPlantDefaults = {
@@ -550,15 +552,22 @@ function LoginPage({ users, setUsers, onLogin, onAudit }) {
       created_at: today(),
       updated_at: today(),
     };
-    setUsers([admin]);
-    onAudit({
-      user_name: admin.name,
-      action: 'First admin created',
-      target: admin.username,
-      detail: 'Initial local account setup',
-    });
-    onLogin(admin.id);
-    setBusy(false);
+    try {
+      await writeAppState('plant-zone-users', [admin]);
+      setUsers([admin]);
+      onAudit({
+        user_name: admin.name,
+        action: 'First admin created',
+        target: admin.username,
+        detail: 'Initial shared account setup',
+      });
+      onLogin(admin.id);
+    } catch (saveError) {
+      console.error('Could not save first admin to Supabase', saveError);
+      setError(saveError?.message || 'Could not save owner account to the shared database.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const login = async () => {
@@ -626,6 +635,28 @@ function LoginPage({ users, setUsers, onLogin, onAudit }) {
   );
 }
 
+function LoadingPage() {
+  return (
+    <main className="login-page">
+      <section className="login-card">
+        <div className="login-brand"><span className="brand-mark"><Sprout size={26} /></span><div><strong>Plant Zone POS</strong><small>Garden Center | Pyay</small></div></div>
+        <div className="login-copy"><span className="eyebrow">Secure workspace</span><h1>Loading workspace</h1><p>Checking the shared store data before sign in.</p></div>
+      </section>
+    </main>
+  );
+}
+
+function ConfigurationErrorPage({ message = 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel, then redeploy this site.' }) {
+  return (
+    <main className="login-page">
+      <section className="login-card">
+        <div className="login-brand"><span className="brand-mark"><TriangleAlert size={26} /></span><div><strong>Plant Zone POS</strong><small>Setup required</small></div></div>
+        <div className="login-copy"><span className="eyebrow">Database unavailable</span><h1>Shared data cannot load</h1><p>{message}</p></div>
+      </section>
+    </main>
+  );
+}
+
 function App() {
   useState(prepareCleanStorage);
   const [activePage, setActivePage] = useState('pos');
@@ -639,7 +670,7 @@ function App() {
   const [invoices, setInvoices] = usePersistentState('plant-zone-invoices', emptyInvoices);
   const [saleAdjustments, setSaleAdjustments] = usePersistentState('plant-zone-sale-adjustments', []);
   const [expenses, setExpenses] = usePersistentState('plant-zone-expenses', []);
-  const [users, setUsers] = usePersistentState('plant-zone-users', defaultUsers);
+  const [users, setUsers, usersLoaded, usersLoadError] = usePersistentState('plant-zone-users', defaultUsers);
   const [auditLogs, setAuditLogs] = usePersistentState('plant-zone-audit-logs', defaultAuditLogs);
   const [inventoryHistory, setInventoryHistory, inventoryHistoryLoaded] = usePersistentState('plant-zone-stock-history', defaultInventoryHistory);
   const [sessionUserId, setSessionUserId] = useState(() => readSession()?.userId || '');
@@ -770,6 +801,9 @@ function App() {
   const todayRows = useMemo(() => rows.filter((row) => row.date === today()), [rows]);
   const monthlyRows = useMemo(() => rows.filter((row) => row.date.startsWith(monthNow())), [rows]);
 
+  if (!isSupabaseConfigured) return <ConfigurationErrorPage />;
+  if (!usersLoaded) return <LoadingPage />;
+  if (usersLoadError) return <ConfigurationErrorPage message={usersLoadError} />;
   if (!currentUser) return <LoginPage users={users} setUsers={setUsers} onLogin={handleLogin} onAudit={logAudit} />;
 
   return (
@@ -3056,10 +3090,17 @@ function SettingsPage({ users, setUsers, currentUser, auditLogs, logAudit, onLog
       return;
     }
     const password_hash = await hashPassword(userDraft.password);
-    setUsers((current) => [...current, { ...userDraft, password: undefined, password_hash, id: Date.now(), active: true }]);
-    logAudit({ action: 'User created', target: userDraft.username, detail: roleLabels[userDraft.role] || userDraft.role });
-    setUserDraft({ name: '', username: '', password: '', role: 'staff', can_view_reports: false });
-    setFormError('');
+    const nextUsers = [...users, { ...userDraft, password: undefined, password_hash, id: Date.now(), active: true }];
+    try {
+      await writeAppState('plant-zone-users', nextUsers);
+      setUsers(nextUsers);
+      logAudit({ action: 'User created', target: userDraft.username, detail: roleLabels[userDraft.role] || userDraft.role });
+      setUserDraft({ name: '', username: '', password: '', role: 'staff', can_view_reports: false });
+      setFormError('');
+    } catch (saveError) {
+      console.error('Could not save user to Supabase', saveError);
+      setFormError(saveError?.message || 'Could not save the user account to the shared database.');
+    }
   };
   const updateUserRole = (user, role) => {
     setUsers((current) => current.map((item) => (
@@ -3127,7 +3168,7 @@ function SettingsPage({ users, setUsers, currentUser, auditLogs, logAudit, onLog
           <label>Location<input value="Pyay, Bago Region, Myanmar" readOnly /></label>
           <label>Phone<input value="+95 9 756 040646" readOnly /></label>
           <label>Default payment method<input value="Cash" readOnly /></label>
-          <label>Data storage<input value="This browser / device" readOnly /></label>
+          <label>Data storage<input value="Shared Supabase database" readOnly /></label>
         </div>
       </section>
     </section>
