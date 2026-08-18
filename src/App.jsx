@@ -1045,6 +1045,7 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
   const [processTab, setProcessTab] = useState('return');
   const [salesStageFilter, setSalesStageFilter] = useState('All');
   const [selectedSalesDetailStage, setSelectedSalesDetailStage] = useState('');
+  const [selectedSaleInvoice, setSelectedSaleInvoice] = useState(null);
   const [processNotice, setProcessNotice] = useState(null);
   const [draft, setDraft] = useState({
     plant_id: plants[0]?.id || '',
@@ -1265,7 +1266,7 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
               </div>
               <div className="sales-stage-preview">
                 {recentInvoices.map((invoice) => (
-                  <div key={`${stage}-preview-${invoice.id}`}>
+                  <div key={`${stage}-preview-${invoice.id}`} className="clickable-preview-item" onClick={(event) => { event.stopPropagation(); setSelectedSaleInvoice(invoice); }} title="Click to view purchase details">
                     <span><strong>{invoice.invoice_no}</strong><small>{invoice.customer.cus_name}</small></span>
                     <b>{money(invoice.sale_amount)}</b>
                   </div>
@@ -1277,12 +1278,12 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
               </button>
               <div className="sales-stage-list">
                 {stageInvoices.map((invoice) => (
-            <article className="sale-card" key={invoice.id}>
+            <article className="sale-card clickable-sale-card" key={invoice.id} onClick={(event) => { event.stopPropagation(); setSelectedSaleInvoice(invoice); }} title="Click to view purchase details">
               <div className="sale-card-main">
                 <strong>{invoice.invoice_no} · {invoice.customer.cus_name}</strong>
                 <small>{invoice.items.length} item(s) · {money(invoice.sale_amount)} · {invoice.sale_date}</small>
               </div>
-              <div className="sale-card-controls">
+              <div className="sale-card-controls" onClick={(event) => event.stopPropagation()}>
                 <label>Sale stage<select value={saleStageFor(invoice)} onChange={(event) => updateSaleStage(invoice, event.target.value)}>{saleStages.map((item) => <option key={item}>{item}</option>)}</select></label>
                 <label>Paid amount<input type="number" min="0" max={invoice.sale_amount} value={invoice.paid_amount ?? (invoice.payment_status === 'Paid' ? invoice.sale_amount : 0)} onChange={(event) => updatePaidAmount(invoice, event.target.value)} /></label>
               </div>
@@ -1296,6 +1297,10 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
         </div>
       </section>
 
+      {selectedSaleInvoice && (
+        <SaleCustomerOrderModal invoice={selectedSaleInvoice} onClose={() => setSelectedSaleInvoice(null)} updateSaleStage={updateSaleStage} updatePaidAmount={updatePaidAmount} />
+      )}
+
       {selectedSalesDetail && (
         <div className="modal-backdrop sales-detail-backdrop" onMouseDown={() => setSelectedSalesDetailStage('')}>
           <div className="stock-modal sales-detail-modal" role="dialog" aria-modal="true" aria-labelledby="sales-detail-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -1308,12 +1313,12 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
             </div>
             <div className="sales-stage-list sales-detail-list">
               {selectedSalesDetailInvoices.map((invoice) => (
-                <article className="sale-card" key={invoice.id}>
+                <article className="sale-card clickable-sale-card" key={invoice.id} onClick={(event) => { event.stopPropagation(); setSelectedSaleInvoice(invoice); }} title="Click to view purchase details">
                   <div className="sale-card-main">
                     <strong>{invoice.invoice_no} - {invoice.customer.cus_name}</strong>
                     <small>{invoice.items.length} item(s) - {money(invoice.sale_amount)} - {invoice.sale_date}</small>
                   </div>
-                  <div className="sale-card-controls">
+                  <div className="sale-card-controls" onClick={(event) => event.stopPropagation()}>
                     <label>Sale stage<select value={saleStageFor(invoice)} onChange={(event) => { updateSaleStage(invoice, event.target.value); setSelectedSalesDetailStage(event.target.value); }}>{saleStages.map((item) => <option key={item}>{item}</option>)}</select></label>
                     <label>Paid amount<input type="number" min="0" max={invoice.sale_amount} value={invoice.paid_amount ?? (invoice.payment_status === 'Paid' ? invoice.sale_amount : 0)} onChange={(event) => updatePaidAmount(invoice, event.target.value)} /></label>
                   </div>
@@ -1387,6 +1392,163 @@ function SalesPage({ invoices, setInvoices, plants, setPlants, customers, isForm
 
       <InvoicesPage invoices={invoices} setInvoices={setInvoices} plants={plants} setPlants={setPlants} customers={customers} isFormOpen={isFormOpen} setIsFormOpen={setIsFormOpen} isListOpen={false} setIsListOpen={() => {}} nextInvoiceNo={nextInvoiceNo} showWorkspace={false} currentUser={currentUser} logAudit={logAudit} setInventoryHistory={setInventoryHistory} />
     </section>
+  );
+}
+
+
+function SaleCustomerOrderModal({ invoice, onClose, updateSaleStage, updatePaidAmount }) {
+  if (!invoice) return null;
+
+  const paidAmount = Number(invoice.paid_amount ?? (invoice.payment_status === 'Paid' ? invoice.sale_amount : 0));
+  const balanceAmount = Math.max(0, Number(invoice.sale_amount || 0) - paidAmount);
+  const packageData = { ...defaultInvoicePackage, ...invoice.photo_session_package };
+  const packageFee = Number(packageData.fee || 0);
+  const plantItemsTotal = invoice.items.reduce((sum, item) => sum + (Number(item.sale_amount) || (Number(item.quantity || 1) * Number(item.unit_price || 0))), 0);
+  const discountAmount = Number(invoice.discount_amount || 0);
+  const grossAmount = Number(invoice.gross_total ?? (plantItemsTotal + packageFee));
+  const stage = saleStageFor(invoice);
+
+  return (
+    <div className="modal-backdrop sales-detail-backdrop" onMouseDown={onClose}>
+      <div className="stock-modal customer-purchase-modal" role="dialog" aria-modal="true" aria-labelledby="customer-order-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-title-row">
+          <div>
+            <span className="eyebrow"><User size={14} /> Customer Sale Breakdown</span>
+            <h2 id="customer-order-title">{invoice.customer.cus_name}</h2>
+            <p>Invoice {invoice.invoice_no} • {invoice.sale_date}</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close order details"><X size={18} /></button>
+        </div>
+
+        <div className="customer-order-body">
+          <section className="customer-order-header-card">
+            <div className="customer-order-info">
+              <div>
+                <span className="customer-info-label">Customer Name</span>
+                <strong>{invoice.customer.cus_name}</strong>
+              </div>
+              <div>
+                <span className="customer-info-label">Phone</span>
+                <strong>{invoice.customer.cus_ph || 'No phone'}</strong>
+              </div>
+              <div>
+                <span className="customer-info-label">Address</span>
+                <strong>{invoice.customer.cus_address || 'No address'}</strong>
+              </div>
+              <div>
+                <span className="customer-info-label">Source</span>
+                <span className="status-pill customer-source">{invoice.customer.source || 'Direct'}</span>
+              </div>
+            </div>
+
+            <div className="customer-order-badges">
+              <div>
+                <span className="customer-info-label">Sale Stage</span>
+                <span className={`status-pill ${clean(stage).replaceAll(' ', '-')}`}>{stage}</span>
+              </div>
+              <div>
+                <span className="customer-info-label">Payment Status</span>
+                <b className={`invoice-payment-badge ${clean(invoice.payment_status)}`}>{invoice.payment_status}</b>
+              </div>
+            </div>
+          </section>
+
+          <section className="customer-items-section">
+            <div className="panel-title-row">
+              <div className="panel-title"><Leaf size={18} /><h3>Purchased Plants & Items ({invoice.items.length})</h3></div>
+            </div>
+            <div className="customer-items-table-wrap">
+              <table className="customer-items-table">
+                <thead>
+                  <tr>
+                    <th>Plant / Item</th>
+                    <th>Code</th>
+                    <th>Type / Size</th>
+                    <th className="num">Qty</th>
+                    <th className="num">Unit Price</th>
+                    <th className="num">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoice.items.map((item, index) => (
+                    <tr key={`modal-item-${index}`}>
+                      <td><strong>{item.plant_name}</strong></td>
+                      <td><code>{item.plant_code || '-'}</code></td>
+                      <td><small>{item.plant_type || 'Plant'} • Size {item.size || 'M'}</small></td>
+                      <td className="num"><b>{item.quantity}</b></td>
+                      <td className="num">{money(item.unit_price)}</td>
+                      <td className="num"><strong>{money(item.sale_amount || (item.quantity * item.unit_price))}</strong></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {(packageFee > 0 || packageData.image) && (
+              <div className="invoice-package-card customer-package-card">
+                <div className="invoice-package-label"><Package size={14} /> Package Add-on</div>
+                <div className="invoice-package-content">
+                  {packageData.image && <img src={packageData.image} alt={packageData.title || 'Plant package'} />}
+                  <div>
+                    <strong>{packageData.title || 'Plant Package'}</strong>
+                    <span>Fee: {money(packageFee)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="customer-summary-grid">
+            <div className="customer-summary-card">
+              <span>Gross Total</span>
+              <strong>{money(grossAmount)}</strong>
+            </div>
+            {discountAmount > 0 && (
+              <div className="customer-summary-card discount">
+                <span>Discount</span>
+                <strong>- {money(discountAmount)}</strong>
+              </div>
+            )}
+            <div className="customer-summary-card grand">
+              <span>Final Total</span>
+              <strong>{money(invoice.sale_amount)}</strong>
+            </div>
+            <div className="customer-summary-card paid">
+              <span>Paid Amount</span>
+              <strong>{money(paidAmount)}</strong>
+            </div>
+            <div className="customer-summary-card balance">
+              <span>Balance Due</span>
+              <strong>{money(balanceAmount)}</strong>
+            </div>
+          </section>
+
+          <section className="customer-modal-controls">
+            <label>
+              <span>Update Sale Stage</span>
+              <select value={stage} onChange={(event) => updateSaleStage(invoice, event.target.value)}>
+                {saleStages.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Paid Amount (Ks)</span>
+              <input
+                type="number"
+                min="0"
+                max={invoice.sale_amount}
+                value={paidAmount}
+                onChange={(event) => updatePaidAmount(invoice, event.target.value)}
+              />
+            </label>
+          </section>
+        </div>
+
+        <div className="customer-modal-footer">
+          <button type="button" className="ghost-button" onClick={() => shareText(`Invoice ${invoice.invoice_no} - ${invoice.customer.cus_name} - ${money(invoice.sale_amount)}`)}><Send size={16} /> Share Summary</button>
+          <button type="button" className="primary-button" onClick={onClose}>Close Details</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
