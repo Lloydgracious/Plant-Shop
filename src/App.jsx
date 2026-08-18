@@ -419,12 +419,16 @@ function usePersistentState(key, initialValue) {
       try {
         const databaseValue = await readAppState(key);
         if (!isMounted) return;
-        if (databaseValue !== null) {
+        const isNonEmptyArrayDefault = Array.isArray(initialValueRef.current) && initialValueRef.current.length > 0;
+        const hasValidData = databaseValue !== null && (!isNonEmptyArrayDefault || (Array.isArray(databaseValue) && databaseValue.length > 0));
+
+        if (hasValidData) {
           setState(databaseValue);
           writeStateCache(key, databaseValue);
         } else {
           await writeAppState(key, initialValueRef.current);
           writeStateCache(key, initialValueRef.current);
+          setState(initialValueRef.current);
         }
       } catch (error) {
         console.error(`Could not load ${key} from Supabase`, error);
@@ -555,8 +559,9 @@ function LoadingPage() {
   );
 }
 
-function LoginPage({ users, setUsers, onLogin, onAudit }) {
-  const [mode, setMode] = useState(users.length === 0 ? 'create' : 'login');
+function LoginPage({ users: rawUsers, setUsers, onLogin, onAudit }) {
+  const users = useMemo(() => (rawUsers && rawUsers.length > 0 ? rawUsers : defaultUsers), [rawUsers]);
+  const [mode, setMode] = useState('login');
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [setup, setSetup] = useState({ name: '', username: '', password: '' });
   const [error, setError] = useState('');
