@@ -5236,6 +5236,10 @@ td {
 }
 
 /* Customer Purchase Details Modal */
+.modal-backdrop.customer-purchase-backdrop {
+  z-index: 1300 !important;
+}
+
 .stock-modal.customer-purchase-modal {
   display: grid;
   grid-template-rows: auto 1fr auto;

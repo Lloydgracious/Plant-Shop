@@ -1409,7 +1409,7 @@ function SaleCustomerOrderModal({ invoice, onClose, updateSaleStage, updatePaidA
   const stage = saleStageFor(invoice);
 
   return (
-    <div className="modal-backdrop sales-detail-backdrop" onMouseDown={onClose}>
+    <div className="modal-backdrop sales-detail-backdrop customer-purchase-backdrop" onMouseDown={onClose}>
       <div className="stock-modal customer-purchase-modal" role="dialog" aria-modal="true" aria-labelledby="customer-order-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="modal-title-row">
           <div>
