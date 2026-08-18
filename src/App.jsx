@@ -667,15 +667,6 @@ function LoginPage({ users: rawUsers, setUsers, onLogin, onAudit }) {
           )}
           {error && <p className="login-error" role="alert">{error}</p>}
           <button className="primary-button wide" onClick={isCreateMode ? createFirstAdmin : login} disabled={busy}><ShieldCheck size={18} /> {busy ? 'Please wait...' : isCreateMode ? 'Create admin' : 'Sign in'}</button>
-          {!isCreateMode && (
-            <div className="login-quick-hint">
-              <small>Default Admin: <code>admin</code> / <code>admin1234</code></small>
-              <button type="button" className="ghost-button" style={{ marginTop: '8px', fontSize: '12px' }} onClick={() => setCredentials({ username: 'admin', password: 'admin1234' })}>Quick Fill Admin Login</button>
-            </div>
-          )}
-          <button type="button" className="ghost-button wide" style={{ marginTop: '10px' }} onClick={() => { setError(''); setMode(isCreateMode ? 'login' : 'create'); }}>
-            {isCreateMode ? 'Already have an account? Sign in' : 'Need to create a new account? Create admin'}
-          </button>
         </div>
       </section>
     </main>
